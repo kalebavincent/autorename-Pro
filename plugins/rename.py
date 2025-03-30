@@ -162,6 +162,7 @@ async def auto_rename_files(client, message):
             )
         except Exception as e:
             del renaming_operations[file_id]
+            secantial_operations[user_id]["expected_count"] -= 1
             return await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
 
         await queue_message.edit_text(f"🔄 **ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇᴛ ᴀᴊᴏᴜᴛ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
@@ -219,6 +220,7 @@ async def auto_rename_files(client, message):
             else:
                 await queue_message.edit_text("Le message ne contient pas de document ou de vidéo pris en charge.")
                 del renaming_operations[file_id]
+                secantial_operations[user_id]["expected_count"] -= 1
                 return
 
             caption = (
