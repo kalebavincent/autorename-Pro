@@ -136,6 +136,7 @@ async def auto_rename_files(client, message):
                     if extracted_qualities == "Unknown":
                         await queue_message.edit_text("**ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴘᴜ ᴇxᴛʀᴀɪʀᴇ ʟᴀ ǫᴜᴀʟɪᴛᴇ́ ᴄᴏʀʀᴇᴄᴛᴇᴍᴇɴᴛ. ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇɴ 'Unknown'...**")
                         del renaming_operations[file_id]
+                        secantial_operations[user_id]["expected_count"] -= 1
                         return
 
                     format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
