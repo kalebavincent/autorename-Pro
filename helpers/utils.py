@@ -424,28 +424,20 @@ MIME_EXTENSIONS = {
     "application/octet-stream": ".bin"
 }
 
-def determine_file_extension(mime_type: str, original_filename: str = "") -> str:
-    """
-    Détermine l'extension appropriée en fonction du MIME Type et du nom de fichier original.
+def determine_file_extension(mime_type: Optional[str], original_name: Optional[str] = None) -> str:
+    """Version robuste avec gestion des None"""
+    mime_type = mime_type or ""
+    original_name = original_name or ""
     
-    Args:
-        mime_type: Le MIME Type du fichier
-        original_filename: Le nom original du fichier (optionnel)
+    extension = MIME_EXTENSIONS.get(mime_type.lower(), "")
     
-    Returns:
-        str: L'extension appropriée avec le point (ex: ".mp4")
-    """
-    extension = MIME_EXTENSIONS.get(mime_type.lower())
+    if not extension:
+        extension = mimetypes.guess_extension(mime_type) or ""
     
-    if not extension and original_filename:
-        try:
-            ext = os.path.splitext(original_filename)[1].lower()
-            if ext in MIME_EXTENSIONS.values():  
-                extension = ext
-        except:
-            pass
+    if not extension and original_name:
+        _, extension = os.path.splitext(original_name)
     
-    return extension or ".bin"
+    return extension.lower() if extension else ".mp4"
 
 def verify_actual_file_type(file_path: str) -> Tuple[str, str]:
     """

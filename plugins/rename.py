@@ -1,3 +1,4 @@
+from io import BytesIO
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 from pyrogram.types import (
@@ -48,7 +49,7 @@ async def get_user_semaphore(user_id):
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
     user_id = message.from_user.id
-
+    ph_path = None
     user_data = await hyoshcoder.read_user(user_id)
     if not user_data:
         return await message.reply_text(
@@ -238,7 +239,9 @@ async def auto_rename_files(client, message):
         )
 
         try:
-            real_mime, _ =  verify_actual_file_type(path)
+            real_mime, real_ext = verify_actual_file_type(path)
+            if not real_mime:
+                real_mime = "video/mp4"
             file_ext =  determine_file_extension(real_mime, renamed_file_path)
 
             current_ext = os.path.splitext(renamed_file_path)[1]
@@ -248,6 +251,7 @@ async def auto_rename_files(client, message):
                 path = corrected_path
                 renamed_file_path = corrected_path
                 metadata_file_path = f"Metadata/{os.path.basename(corrected_path)}"
+                renamed_file_name = os.path.basename(corrected_path) 
                 await queue_message.edit_text(f"✅ Extension corrigée : {file_ext}")
 
             os.rename(path, renamed_file_path)
@@ -326,7 +330,7 @@ async def auto_rename_files(client, message):
                 f"📤 **ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`"
             )
             await asyncio.sleep(5)
-            ph_path = None
+            # ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
             c_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
 
@@ -361,10 +365,19 @@ async def auto_rename_files(client, message):
             elif media_type == "video" and message.video.thumbs:
                 ph_path = await client.download_media(message.video.thumbs[0].file_id)
 
-            if ph_path:
-                img = Image.open(ph_path).convert("RGB")
-                img = img.resize((320, 320))
-                img.save(ph_path, "JPEG")
+            try:
+                if ph_path:
+                    with open(ph_path, 'rb') as f:
+                        img_data = f.read()
+                    
+                    img = Image.open(BytesIO(img_data))
+                    img = img.convert("RGB")
+                    img = img.resize((320, 320))
+                    
+                    img.save(ph_path, "JPEG", quality=85)
+            except Exception as e:
+                print(f"Erreur de ré-encodage: {e}")
+                ph_path = None
 
             metadata = extractMetadata(createParser(path))
             if metadata and metadata.has("duration"):
