@@ -136,3 +136,4 @@ webcolors
 webencodings
 websocket-client
 yarl
+filetype
