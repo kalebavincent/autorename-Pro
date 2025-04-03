@@ -424,7 +424,7 @@ MIME_EXTENSIONS = {
     "application/octet-stream": ".bin"
 }
 
-def determine_file_extension(mime_type: str, original_filename: str = "") -> str:
+async def determine_file_extension(mime_type: str, original_filename: str = "") -> str:
     """
     Détermine l'extension appropriée en fonction du MIME Type et du nom de fichier original.
     
