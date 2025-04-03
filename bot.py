@@ -17,7 +17,7 @@ load_dotenv()
 
 pyrogram.utils.MIN_CHANNEL_ID =-1002175858655
 Config = settings
-SUPPORT_CHAT =-1002229122792
+SUPPORT_CHAT =-1002175858655
 
 class Bot(Client):
 
