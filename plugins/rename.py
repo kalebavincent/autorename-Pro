@@ -1,11 +1,27 @@
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
-from pyrogram.types import InputMediaDocument, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import (
+    InputMediaDocument,
+    Message,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from PIL import Image
 from datetime import datetime
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, get_media_duration
+from helpers.utils import (
+    get_filename,
+    progress_for_pyrogram,
+    humanbytes,
+    convert,
+    extract_episode,
+    extract_quality,
+    extract_season,
+    get_media_duration,
+    determine_file_extension,
+    verify_actual_file_type,
+)
 from database.data import hyoshcoder
 from config import settings
 import os
@@ -22,10 +38,12 @@ secantial_operations = {}
 user_semaphores = {}
 user_queue_messages = {}
 
+
 async def get_user_semaphore(user_id):
     if user_id not in user_semaphores:
         user_semaphores[user_id] = asyncio.Semaphore(3)
     return user_semaphores[user_id]
+
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
@@ -33,37 +51,67 @@ async def auto_rename_files(client, message):
 
     user_data = await hyoshcoder.read_user(user_id)
     if not user_data:
-        return await message.reply_text("❌ ɪᴍᴘᴏssɪʙʟᴇ ᴅᴇ ᴄʜᴀʀɢᴇʀ ᴠᴏs ɪɴꜰᴏʀᴍᴀᴛɪᴏɴs. ᴠᴇᴜɪʟʟᴇᴢ ᴠᴏᴜs ɪɴsᴄʀɪʀᴇ /start.")
+        return await message.reply_text(
+            "❌ ɪᴍᴘᴏssɪʙʟᴇ ᴅᴇ ᴄʜᴀʀɢᴇʀ ᴠᴏs ɪɴꜰᴏʀᴍᴀᴛɪᴏɴs. ᴠᴇᴜɪʟʟᴇᴢ ᴠᴏᴜs ɪɴsᴄʀɪʀᴇ /start."
+        )
 
     user_points = user_data.get("points", 0)
     format_template = user_data.get("format_template", "")
     media_preference = user_data.get("media_type", "")
     sequential_mode = user_data.get("sequential_mode", False)
-    src_info = await hyoshcoder.get_src_info(user_id)  
+    src_info = await hyoshcoder.get_src_info(user_id)
 
     if user_points < 1:
-        return await message.reply_text("❌ ᴠᴏᴜs ɴ'ᴀᴠᴇᴢ ᴘᴀs ᴀssᴇᴢ ᴅᴇ ᴘᴏɪɴᴛs ᴘᴏᴜʀ ʀᴇɴᴏᴍᴍᴇʀ ᴜɴ ꜰɪᴄʜɪᴇʀ. ʀᴇᴄʜᴀʀɢᴇᴢ ᴠᴏs ᴘᴏɪɴᴛs.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
+        return await message.reply_text(
+            "❌ ᴠᴏᴜs ɴ'ᴀᴠᴇᴢ ᴘᴀs ᴀssᴇᴢ ᴅᴇ ᴘᴏɪɴᴛs ᴘᴏᴜʀ ʀᴇɴᴏᴍᴍᴇʀ ᴜɴ ꜰɪᴄʜɪᴇʀ. ʀᴇᴄʜᴀʀɢᴇᴢ ᴠᴏs ᴘᴏɪɴᴛs.",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Free points", callback_data="free_points")]]
+            ),
+        )
 
     if not format_template:
         return await message.reply_text(
             "ᴠᴇᴜɪʟʟᴇᴢ ᴅ'ᴀʙᴏʀᴅ ᴅᴇ́ғɪɴɪʀ ᴜɴ ғᴏʀᴍᴀᴛ ᴅᴇ ʀᴇɴᴏᴍᴍᴀɢᴇ ᴀᴜᴛᴏᴍᴀᴛɪǫᴜᴇ ᴇɴ ᴜᴛɪʟɪsᴀɴᴛ /autorename"
         )
-    
 
     if message.document:
         file_id = message.document.file_id
-        file_name = message.document.file_name or "inconnu"
-        media_type = media_preference if media_preference else "document"  
+        original_name = message.document.file_name or get_filename(
+            extension="",  
+            prefix="doc",
+            use_timestamp=True
+        )
+        mime_type = message.document.mime_type
+        ext = await determine_file_extension(mime_type, original_name)
+        file_name = f"{os.path.splitext(original_name)[0]}{ext}"
+        media_type = media_preference if media_preference else "document"
+
     elif message.video:
         file_id = message.video.file_id
-        file_name = f"{message.video.file_name or 'inconnu'}.mp4"
+        original_name = message.video.file_name or get_filename(
+            extension="",  
+            prefix="vid",
+            use_timestamp=True
+        )
+        mime_type = message.video.mime_type or "video/mp4"
+        ext = await determine_file_extension(mime_type, original_name)
+        file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "video"
+
     elif message.audio:
         file_id = message.audio.file_id
-        file_name = f"{message.audio.file_name or 'inconnu'}.mp3"
+        original_name = message.audio.file_name or get_filename(
+            extension="",  
+            prefix="aud",
+            use_timestamp=True
+        )
+        mime_type = message.audio.mime_type or "audio/mpeg"
+        ext = await determine_file_extension(mime_type, original_name)
+        file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "audio"
+
     else:
-        return await message.reply_text("ᴜɴsᴜᴘᴘᴏʀᴛᴇᴅ ꜰɪʟᴇ ᴛʏᴘᴇ")
+        return await message.reply_text("Unsupported file type")
 
     if file_id in renaming_operations:
         elapsed_time = (datetime.now() - renaming_operations[file_id]).seconds
@@ -78,7 +126,7 @@ async def auto_rename_files(client, message):
         extracted_qualities = await extract_quality(file_name)
     elif src_info == "caption":
         caption = message.caption if message.caption else ""
-        if caption:  
+        if caption:
             episode_number = await extract_episode(caption)
             saison = await extract_season(caption)
             extracted_qualities = await extract_quality(caption)
@@ -97,7 +145,6 @@ async def auto_rename_files(client, message):
         f"➲ **sᴀɪsᴏɴ :** `{saison if saison else 'N/A'}`\n"
         f"➲ **ᴇᴘɪsᴏᴅᴇ :** `{episode_number if episode_number else 'N/A'}`\n"
         f"➲ **ǫᴜᴀʟɪᴛᴇ́ :** `{extracted_qualities if extracted_qualities else 'N/A'}`"
-
     )
 
     queue_message = await message.reply_text(assurance_message)
@@ -111,9 +158,11 @@ async def auto_rename_files(client, message):
 
     try:
         if user_id in user_queue_messages and user_queue_messages[user_id]:
-            await user_queue_messages[user_id][0].edit_text(f"🔄 **ᴛʀᴀɪᴛᴇᴍᴇɴᴛ ᴅᴜ ғɪᴄʜɪᴇʀ :**\n➲ **ғɪʟᴇɴᴀᴍᴇ :** `{file_name}`")
+            await user_queue_messages[user_id][0].edit_text(
+                f"🔄 **ᴛʀᴀɪᴛᴇᴍᴇɴᴛ ᴅᴜ ғɪᴄʜɪᴇʀ :**\n➲ **ғɪʟᴇɴᴀᴍᴇ :** `{file_name}`"
+            )
             user_queue_messages[user_id].pop(0)
-            
+
         if user_id not in secantial_operations:
             secantial_operations[user_id] = {"files": [], "expected_count": 0}
 
@@ -121,25 +170,40 @@ async def auto_rename_files(client, message):
 
         if episode_number or saison:
             placeholders = [
-                "episode", "Episode", "EPISODE", "{episode}",
-                "saison", "Saison", "SAISON", "{saison}"
+                "episode",
+                "épisode",
+                "Episode",
+                "EPISODE",
+                "{episode}",
+                "saison",
+                "Saison",
+                "SAISON",
+                "{saison}",
             ]
             for placeholder in placeholders:
                 if placeholder.lower() in ["episode", "{episode}"] and episode_number:
-                    format_template = format_template.replace(placeholder, str(episode_number), 1)
+                    format_template = format_template.replace(
+                        placeholder, str(episode_number), 1
+                    )
                 elif placeholder.lower() in ["saison", "{saison}"] and saison:
-                    format_template = format_template.replace(placeholder, str(saison), 1)
+                    format_template = format_template.replace(
+                        placeholder, str(saison), 1
+                    )
 
             quality_placeholders = ["quality", "Quality", "QUALITY", "{quality}"]
             for quality_placeholder in quality_placeholders:
                 if quality_placeholder in format_template:
                     if extracted_qualities == "Unknown":
-                        await queue_message.edit_text("**ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴘᴜ ᴇxᴛʀᴀɪʀᴇ ʟᴀ ǫᴜᴀʟɪᴛᴇ́ ᴄᴏʀʀᴇᴄᴛᴇᴍᴇɴᴛ. ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇɴ 'Unknown'...**")
+                        await queue_message.edit_text(
+                            "**ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴘᴜ ᴇxᴛʀᴀɪʀᴇ ʟᴀ ǫᴜᴀʟɪᴛᴇ́ ᴄᴏʀʀᴇᴄᴛᴇᴍᴇɴᴛ. ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇɴ 'Unknown'...**"
+                        )
                         del renaming_operations[file_id]
                         secantial_operations[user_id]["expected_count"] -= 1
                         return
 
-                    format_template = format_template.replace(quality_placeholder, "".join(extracted_qualities))
+                    format_template = format_template.replace(
+                        quality_placeholder, "".join(extracted_qualities)
+                    )
 
         _, file_extension = os.path.splitext(file_name)
         renamed_file_name = f"{format_template}{file_extension}"
@@ -158,16 +222,34 @@ async def auto_rename_files(client, message):
                 message,
                 file_name=renamed_file_path_with_uuid,
                 progress=progress_for_pyrogram,
-                progress_args=("ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                progress_args=(
+                    "ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                    queue_message,
+                    time.time(),
+                ),
             )
         except Exception as e:
             del renaming_operations[file_id]
             secantial_operations[user_id]["expected_count"] -= 1
             return await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ:** {e}")
 
-        await queue_message.edit_text(f"🔄 **ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇᴛ ᴀᴊᴏᴜᴛ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
+        await queue_message.edit_text(
+            f"🔄 **ʀᴇɴᴏᴍᴍᴀɢᴇ ᴇᴛ ᴀᴊᴏᴜᴛ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs ᴇɴ ᴄᴏᴜʀs :** `{file_name}`"
+        )
 
         try:
+            real_mime, _ = await verify_actual_file_type(path)
+            file_ext = await determine_file_extension(real_mime, renamed_file_path)
+
+            current_ext = os.path.splitext(renamed_file_path)[1]
+            if file_ext.lower() != current_ext.lower():
+                corrected_path = f"{os.path.splitext(renamed_file_path)[0]}{file_ext}"
+                os.rename(path, corrected_path)
+                path = corrected_path
+                renamed_file_path = corrected_path
+                metadata_file_path = f"Metadata/{os.path.basename(corrected_path)}"
+                await queue_message.edit_text(f"✅ Extension corrigée : {file_ext}")
+
             os.rename(path, renamed_file_path)
             path = renamed_file_path
 
@@ -176,37 +258,74 @@ async def auto_rename_files(client, message):
             if _bool_metadata:
                 metadata = await hyoshcoder.get_metadata_code(user_id)
                 if metadata:
-                    cmd = f'ffmpeg -i "{renamed_file_path}"  -map 0 -c:s copy -c:a copy -c:v copy -metadata title="{metadata}" -metadata author="{metadata}" -metadata:s:s title="{metadata}" -metadata:s:a title="{metadata}" -metadata:s:v title="{metadata}"  "{metadata_file_path}"'
-                    try:
-                        process = await asyncio.create_subprocess_shell(
-                            cmd,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.PIPE,
+                    if real_mime.startswith(("video/", "audio/")):
+                        cmd = (
+                            f'ffmpeg -i "{renamed_file_path}" -map 0 -c copy '
+                            f'-metadata title="{metadata}" '
+                            f'-metadata author="{metadata}" '
+                            f'-metadata:s:s title="{metadata}" '
+                            f'-metadata:s:a title="{metadata}" '
+                            f'-metadata:s:v title="{metadata}" '
+                            f'"{metadata_file_path}"'
                         )
-                        stdout, stderr = await process.communicate()
-                        if process.returncode == 0:
+                    else:
+                        cmd = None
+                        metadata_added = True
+                        await queue_message.edit_text(
+                            "ℹ️ Les métadonnées étendues ne sont applicables qu'aux fichiers audio/vidéo"
+                        )
+
+                    if cmd:
+                        try:
+                            process = await asyncio.create_subprocess_shell(
+                                cmd,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                            )
+                            stdout, stderr = await process.communicate()
+
+                            if process.returncode == 0:
+                                metadata_added = True
+                                path = metadata_file_path
+
+                                if (
+                                    not os.path.exists(metadata_file_path)
+                                    or os.path.getsize(metadata_file_path) == 0
+                                ):
+                                    raise Exception("Le fichier de sortie est vide")
+
+                            else:
+                                error_message = stderr.decode()
+                                if "Invalid data found" in error_message:
+                                    await queue_message.edit_text(
+                                        "❌ Format de fichier incompatible avec les métadonnées"
+                                    )
+                                else:
+                                    await queue_message.edit_text(
+                                        f"❌ Erreur FFmpeg: {error_message[:500]}..."
+                                    )
+
+                        except asyncio.TimeoutError:
+                            await queue_message.edit_text(
+                                "⌛ Timeout lors de l'ajout des métadonnées"
+                            )
                             metadata_added = True
-                            path = metadata_file_path
-                        else:
-                            error_message = stderr.decode()
-                            await queue_message.edit_text(f"**ᴇʀʀᴇᴜʀ ᴅᴇ ᴍᴇ́ᴛᴀᴅᴏɴɴᴇ́ᴇs**")
-                    except asyncio.TimeoutError:
-                        await queue_message.edit_text("**ᴄᴏᴍᴍᴀɴᴅᴇ ғғᴍᴘᴇɢ ᴇxᴘɪʀᴇ́ᴇ.**")
-                        metadata_added = True
-                    except Exception as e:
-                        await queue_message.edit_text(f"**ᴜɴᴇ ᴇxᴄᴇᴘᴛɪᴏɴ s'ᴇsᴛ ᴘʀᴏᴅᴜɪᴛᴇ:**\n{str(e)}")
-                        metadata_added = True
+                        except Exception as e:
+                            await queue_message.edit_text(f"⚠️ Exception: {str(e)}")
+                            metadata_added = True
             else:
                 metadata_added = True
 
             if not metadata_added:
                 await queue_message.edit_text(
-                    "L'ᴀᴊᴏᴜᴛ ᴅᴇs mᴇ́ᴛᴀᴅᴏɴɴᴇᴇs ᴀ ᴇ́ᴄʜᴏᴜᴇ́. ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴅᴜ ғɪᴄʜɪᴇʀ ʀᴇɴᴏᴍᴍᴇ́."
+                    "⚠️ Échec de l'ajout des métadonnées. Envoi du fichier original."
                 )
                 path = renamed_file_path
 
-            await queue_message.edit_text(f"📤 **ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
-            await asyncio.sleep(5)  
+            await queue_message.edit_text(
+                f"📤 **ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`"
+            )
+            await asyncio.sleep(5)
             ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
             c_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
@@ -218,20 +337,24 @@ async def auto_rename_files(client, message):
                 file_size = humanbytes(message.video.file_size)
                 duration = convert(message.video.duration or 0)
             else:
-                await queue_message.edit_text("Le message ne contient pas de document ou de vidéo pris en charge.")
+                await queue_message.edit_text(
+                    "Le message ne contient pas de document ou de vidéo pris en charge."
+                )
                 del renaming_operations[file_id]
                 secantial_operations[user_id]["expected_count"] -= 1
                 return
 
-            caption = (
-                c_caption.format(
-                    filename=renamed_file_name,
-                    filesize=file_size,
-                    duration=duration,
+            if c_caption:
+                formatted_caption = c_caption.format(
+                    filename=f"**{renamed_file_name}**", 
+                    filesize=f"**{file_size}**",         
+                    duration=f"**{duration}**"          
                 )
-                if c_caption
-                else f"**{renamed_file_name}**"
-            )
+                if not formatted_caption.startswith("**"):
+                    formatted_caption = f"**{formatted_caption}**"
+                caption = formatted_caption
+            else:
+                caption = f"**{renamed_file_name}**"
 
             if c_thumb:
                 ph_path = await client.download_media(c_thumb)
@@ -242,23 +365,31 @@ async def auto_rename_files(client, message):
                 img = Image.open(ph_path).convert("RGB")
                 img = img.resize((320, 320))
                 img.save(ph_path, "JPEG")
-            
+
             metadata = extractMetadata(createParser(path))
             if metadata and metadata.has("duration"):
-                duration = metadata.get('duration').seconds
-            
-            width, height = 320, 180  
+                duration = metadata.get("duration").seconds
 
-            if metadata.has("width") and metadata.has("height"):
-                original_width = metadata.get("width")
-                original_height = metadata.get("height")
+            width, height = 320, 180  # Valeurs par défaut
 
-                if original_width / original_height != 16 / 9:
-                    height = 180
-                    width = int(height * 16 / 9)
-                else:
-                    width = original_width
-                    height = original_height
+            if metadata is not None:
+                if metadata.has("duration"):
+                    duration = metadata.get("duration").seconds
+
+                has_width = metadata.has("width")
+                has_height = metadata.has("height")
+
+                if has_width and has_height:
+                    original_width = metadata.get("width")
+                    original_height = metadata.get("height")
+
+                    if original_width is not None and original_height is not None:
+                        if original_width / original_height != 16 / 9:
+                            height = 180
+                            width = int(height * 16 / 9)
+                        else:
+                            width = original_width
+                            height = original_height
 
             try:
                 if sequential_mode:
@@ -269,7 +400,11 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             caption=caption,
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                            progress_args=(
+                                "ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                                queue_message,
+                                time.time(),
+                            ),
                         )
                     elif media_type == "video":
                         log_message = await client.send_video(
@@ -279,9 +414,13 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             width=width,
                             height=height,
-                            duration= int(get_media_duration(path)),  
+                            duration=int(get_media_duration(path)),
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                            progress_args=(
+                                "ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                                queue_message,
+                                time.time(),
+                            ),
                         )
                     elif media_type == "audio":
                         log_message = await client.send_audio(
@@ -289,43 +428,54 @@ async def auto_rename_files(client, message):
                             audio=path,
                             caption=caption,
                             thumb=ph_path,
-                            duration= int(get_media_duration(path)),  
+                            duration=int(get_media_duration(path)),
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                            progress_args=(
+                                "ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                                queue_message,
+                                time.time(),
+                            ),
                         )
                     else:
-                        await queue_message.reply_text("❌ **ᴛʏᴘᴇ ᴅᴇ ᴍᴇ́ᴅɪᴀ ɴᴏɴ ᴘʀɪs ᴇɴ ᴄʜᴀʀɢᴇ.**")
+                        await queue_message.reply_text(
+                            "❌ **ᴛʏᴘᴇ ᴅᴇ ᴍᴇ́ᴅɪᴀ ɴᴏɴ ᴘʀɪs ᴇɴ ᴄʜᴀʀɢᴇ.**"
+                        )
                         secantial_operations[user_id]["expected_count"] -= 1
                         return
 
-                    secantial_operations[user_id]["files"].append({
-                        "message_id": log_message.id,
-                        "file_name": renamed_file_name,
-                        "season": saison,
-                        "episode": episode_number
-                    })
+                    secantial_operations[user_id]["files"].append(
+                        {
+                            "message_id": log_message.id,
+                            "file_name": renamed_file_name,
+                            "season": saison,
+                            "episode": episode_number,
+                        }
+                    )
 
-                    if len(secantial_operations[user_id]["files"]) == secantial_operations[user_id]["expected_count"]:
+                    if (
+                        len(secantial_operations[user_id]["files"])
+                        == secantial_operations[user_id]["expected_count"]
+                    ):
                         sorted_files = sorted(
                             secantial_operations[user_id]["files"],
                             key=lambda x: (
-                                int(x["season"]) if x["season"] is not None else 0,  
-                                int(x["episode"]) if x["episode"] is not None else 0 
-                            )
+                                int(x["season"]) if x["season"] is not None else 0,
+                                int(x["episode"]) if x["episode"] is not None else 0,
+                            ),
                         )
 
                         user_channel = await hyoshcoder.get_user_channel(user_id)
                         if not user_channel:
-                            user_channel = user_id  
+                            user_channel = user_id
 
                         try:
                             await client.get_chat(user_channel)
                             for file_info in sorted_files:
-                                await asyncio.sleep(3)  
+                                await asyncio.sleep(3)
                                 await client.copy_message(
                                     user_channel,
                                     settings.DUMP_CHANNEL,
-                                    file_info["message_id"]
+                                    file_info["message_id"],
                                 )
                             await queue_message.reply_text(
                                 f"✅ **ᴛᴏᴜs ʟᴇs ғɪᴄʜɪᴇʀs ᴏɴᴛ ᴇ́ᴛᴇ́ ᴇɴᴠᴏʏᴇ́s ᴅᴀɴs ʟᴇ ᴄᴀɴᴀʟ :** {user_channel}\n"
@@ -341,13 +491,15 @@ async def auto_rename_files(client, message):
                                 f"ᴇʀʀᴇᴜʀ ᴅᴇ́ᴛᴀɪʟʟᴇ́ᴇ : {e}"
                             )
                             for file_info in sorted_files:
-                                await asyncio.sleep(3)  
+                                await asyncio.sleep(3)
                                 await client.copy_message(
-                                    user_id,  
+                                    user_id,
                                     settings.DUMP_CHANNEL,
-                                    file_info["message_id"]
+                                    file_info["message_id"],
                                 )
-                            await queue_message.reply_text("✅ **ᴛᴏᴜs ʟᴇs ғɪᴄʜɪᴇʀs ᴏɴᴛ ᴇ́ᴛᴇ́ ᴇɴᴠᴏʏᴇ́s ᴀ̀ ᴠᴏᴛʀᴇ ɪᴅ ᴜᴛɪʟɪsᴀᴛᴇᴜʀ.**")
+                            await queue_message.reply_text(
+                                "✅ **ᴛᴏᴜs ʟᴇs ғɪᴄʜɪᴇʀs ᴏɴᴛ ᴇ́ᴛᴇ́ ᴇɴᴠᴏʏᴇ́s ᴀ̀ ᴠᴏᴛʀᴇ ɪᴅ ᴜᴛɪʟɪsᴀᴛᴇᴜʀ.**"
+                            )
 
                         del secantial_operations[user_id]
                 else:
@@ -358,7 +510,11 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             caption=caption,
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                            progress_args=(
+                                "ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                                queue_message,
+                                time.time(),
+                            ),
                         )
                     elif media_type == "video":
                         await client.send_video(
@@ -368,9 +524,13 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             width=width,
                             height=height,
-                            duration= int(get_media_duration(path)),
+                            duration=int(get_media_duration(path)),
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                            progress_args=(
+                                "ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                                queue_message,
+                                time.time(),
+                            ),
                         )
                     elif media_type == "audio":
                         await client.send_audio(
@@ -378,9 +538,13 @@ async def auto_rename_files(client, message):
                             audio=path,
                             caption=caption,
                             thumb=ph_path,
-                            duration= int(get_media_duration(path)),
+                            duration=int(get_media_duration(path)),
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                            progress_args=(
+                                "ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                                queue_message,
+                                time.time(),
+                            ),
                         )
             except Exception as e:
                 os.remove(renamed_file_path)
@@ -404,8 +568,7 @@ async def auto_rename_files(client, message):
                 os.remove(metadata_file_path)
             if ph_path and os.path.exists(ph_path):
                 os.remove(ph_path)
-            if file_id in renaming_operations :
+            if file_id in renaming_operations:
                 del renaming_operations[file_id]
     finally:
         user_semaphore.release()
-        

@@ -1,14 +1,20 @@
 from datetime import datetime, timezone
 import math
+import os
 import random
 import re
+import string
 import time
 from typing import Optional, Tuple
 import math, time
+import uuid
 from shortzy import Shortzy
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from scripts import Txt
-
+import mimetypes
+import os
+from typing import Tuple
+mimetypes.init()
 import ffmpeg
 
 from config import settings
@@ -345,6 +351,162 @@ async def check_anti_nsfw(new_name: str, message) -> bool:
     except Exception as e:
         print(f"Error in check_anti_nsfw: {e}")
         return False  
+    
+
+MIME_EXTENSIONS = {
+    # Vidéo
+    "video/mp4": ".mp4",
+    "video/x-matroska": ".mkv",
+    "video/quicktime": ".mov",
+    "video/x-msvideo": ".avi",
+    "video/x-flv": ".flv",
+    "video/webm": ".webm",
+    "video/3gpp": ".3gp",
+    "video/mpeg": ".mpeg",
+    
+    # Audio
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/x-wav": ".wav",
+    "audio/flac": ".flac",
+    "audio/x-aiff": ".aiff",
+    "audio/x-m4a": ".m4a",
+    "audio/x-ms-wma": ".wma",
+    "audio/aac": ".aac",
+    
+    # Sous-titres
+    "application/x-subrip": ".srt",
+    "text/vtt": ".vtt",
+    "application/ttml+xml": ".ttml",
+    
+    # Images
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "image/tiff": ".tiff",
+    "image/bmp": ".bmp",
+    
+    # Documents
+    "text/plain": ".txt",
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/rtf": ".rtf",
+    "application/epub+zip": ".epub",
+    
+    # Archives
+    "application/zip": ".zip",
+    "application/x-rar-compressed": ".rar",
+    "application/x-tar": ".tar",
+    "application/x-7z-compressed": ".7z",
+    "application/gzip": ".gz",
+    
+    # Code
+    "text/html": ".html",
+    "text/css": ".css",
+    "application/javascript": ".js",
+    "application/json": ".json",
+    "application/x-python-code": ".py",
+    "text/x-java-source": ".java",
+    "text/x-php": ".php",
+    "text/x-c": ".c",
+    "text/x-c++": ".cpp",
+    
+    # Divers
+    "application/x-bittorrent": ".torrent",
+    "application/x-shockwave-flash": ".swf",
+    "application/octet-stream": ".bin"
+}
+
+def determine_file_extension(mime_type: str, original_filename: str = "") -> str:
+    """
+    Détermine l'extension appropriée en fonction du MIME Type et du nom de fichier original.
+    
+    Args:
+        mime_type: Le MIME Type du fichier
+        original_filename: Le nom original du fichier (optionnel)
+    
+    Returns:
+        str: L'extension appropriée avec le point (ex: ".mp4")
+    """
+    extension = MIME_EXTENSIONS.get(mime_type.lower())
+    
+    if not extension and original_filename:
+        try:
+            ext = os.path.splitext(original_filename)[1].lower()
+            if ext in MIME_EXTENSIONS.values():  
+                extension = ext
+        except:
+            pass
+    
+    return extension or ".bin"
+
+async def verify_actual_file_type(file_path: str) -> Tuple[str, str]:
+    """
+    Vérifie le type réel du fichier en analysant son contenu.
+    
+    Args:
+        file_path: Chemin vers le fichier
+    
+    Returns:
+        Tuple: (MIME Type réel, extension appropriée)
+    """
+    try:
+        import filetype
+        kind = filetype.guess(file_path)
+        if kind:
+            return kind.mime, determine_file_extension(kind.mime)
+    except ImportError:
+        pass  
+    
+    mime_type, _ = mimetypes.guess_type(file_path)
+    return mime_type, determine_file_extension(mime_type)
+
+def get_filename(extension: str = "", prefix: str = "", suffix: str = "", use_timestamp: bool = True) -> str:
+    """
+    Génère un nom de fichier unique et aléatoire.
+    
+    Args:
+        extension (str): Extension du fichier (ex: ".mp4")
+        prefix (str): Préfixe à ajouter devant le nom
+        suffix (str): Suffixe à ajouter après le nom
+        use_timestamp (bool): Si True, ajoute un timestamp pour plus d'unicité
+    
+    Returns:
+        str: Nom de fichier généré
+    """
+    random_part = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    
+    unique_part = str(uuid.uuid4())[:8]
+    
+    filename_parts = []
+    if prefix:
+        filename_parts.append(prefix)
+    
+    filename_parts.append(random_part)
+    filename_parts.append(unique_part)
+    
+    if use_timestamp:
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename_parts.append(timestamp)
+    
+    if suffix:
+        filename_parts.append(suffix)
+    
+    filename = "_".join(filename_parts)
+    
+    if extension:
+        if not extension.startswith("."):
+            extension = f".{extension}"
+        filename += extension
+    
+    return filename
 
 # # Example usage
 # import asyncio
