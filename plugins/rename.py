@@ -82,7 +82,7 @@ async def auto_rename_files(client, message):
             use_timestamp=True
         )
         mime_type = message.document.mime_type
-        ext = await determine_file_extension(mime_type, original_name)
+        ext =  determine_file_extension(mime_type, original_name)
         file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "document"
 
@@ -94,7 +94,7 @@ async def auto_rename_files(client, message):
             use_timestamp=True
         )
         mime_type = message.video.mime_type or "video/mp4"
-        ext = await determine_file_extension(mime_type, original_name)
+        ext =  determine_file_extension(mime_type, original_name)
         file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "video"
 
@@ -106,7 +106,7 @@ async def auto_rename_files(client, message):
             use_timestamp=True
         )
         mime_type = message.audio.mime_type or "audio/mpeg"
-        ext = await determine_file_extension(mime_type, original_name)
+        ext =  determine_file_extension(mime_type, original_name)
         file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "audio"
 
@@ -238,8 +238,8 @@ async def auto_rename_files(client, message):
         )
 
         try:
-            real_mime, _ = await verify_actual_file_type(path)
-            file_ext = await determine_file_extension(real_mime, renamed_file_path)
+            real_mime, _ =  verify_actual_file_type(path)
+            file_ext =  determine_file_extension(real_mime, renamed_file_path)
 
             current_ext = os.path.splitext(renamed_file_path)[1]
             if file_ext.lower() != current_ext.lower():
