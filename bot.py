@@ -8,7 +8,7 @@ from database.data import hyoshcoder
 from aiohttp import web
 from route import web_server
 import pyrogram.utils
-# import pyromod
+import pyromod
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import time
@@ -17,7 +17,7 @@ load_dotenv()
 
 pyrogram.utils.MIN_CHANNEL_ID =-1002175858655
 Config = settings
-SUPPORT_CHAT =-1002175858655
+SUPPORT_CHAT =-1002229122792
 
 class Bot(Client):
 
