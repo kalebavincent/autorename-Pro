@@ -522,16 +522,12 @@ def get_filename(extension: str = "", prefix: str = "", suffix: str = "", use_ti
 
 
 async def fix_thumb(thumb_path: str) -> tuple[int, int, Optional[str]]:
-    """
-    Redimensionne et convertit une image en format JPEG approprié pour les thumbnails Telegram.
-    Retourne: (width, height, path_du_thumbnail_fixé) ou (0, 0, None) en cas d'erreur
-    """
-    if not thumb_path or not os.path.exists(thumb_path):
-        return 0, 0, None
-
+    """Version robuste de la fonction de redimensionnement"""
     try:
-        if os.path.getsize(thumb_path) == 0:
-            os.remove(thumb_path)
+        from PIL import Image 
+        import os
+
+        if not thumb_path or not os.path.exists(thumb_path):
             return 0, 0, None
 
         with Image.open(thumb_path) as img:
@@ -542,22 +538,23 @@ async def fix_thumb(thumb_path: str) -> tuple[int, int, Optional[str]]:
             new_height = 320
             new_width = int((new_height / height) * width)
             
-            img = img.resize((new_width, new_height), Image.LANCZOS)
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
-            temp_path = f"{thumb_path}_fixed.jpg"
-            img.save(temp_path, "JPEG", quality=90, optimize=True, progressive=True)
+            output_path = f"{thumb_path}_fixed.jpg"
+            img.save(output_path, "JPEG", quality=90, optimize=True)
             
-            if temp_path != thumb_path:
+            if output_path != thumb_path:
                 os.remove(thumb_path)
-            
-            return width, height, temp_path
+                
+            return width, height, output_path
 
     except Exception as e:
-        print(f"Erreur dans fix_thumb: {e}")
-        try:
-            os.remove(thumb_path)
-        except:
-            pass
+        print(f"Erreur fix_thumb: {str(e)}")
+        if 'thumb_path' in locals() and os.path.exists(thumb_path):
+            try:
+                os.remove(thumb_path)
+            except:
+                pass
         return 0, 0, None
 
 async def take_screen_shot(video_file, output_directory, ttl):

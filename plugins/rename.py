@@ -42,6 +42,21 @@ secantial_operations = {}
 user_semaphores = {}
 user_queue_messages = {}
 
+async def clean_metadata(file_path):
+    """Nettoie les métadonnées problématiques d'un fichier"""
+    try:
+        if file_path.endswith(('.jpg', '.jpeg', '.png')):
+            from PIL import Image
+            with Image.open(file_path) as img:
+                data = list(img.getdata())
+                clean_img = Image.new(img.mode, img.size)
+                clean_img.putdata(data)
+                clean_img.save(file_path, quality=95)
+        return True
+    except Exception as e:
+        print(f"Erreur nettoyage métadonnées : {e}")
+        return False
+
 
 async def get_user_semaphore(user_id):
     if user_id not in user_semaphores:
@@ -370,62 +385,31 @@ async def auto_rename_files(client, message):
             else:
                 caption = f"**{renamed_file_name}**"
 
+            ph_path = None
             try:
                 if c_thumb:
-                    try:
-                        ph_path = await client.download_media(c_thumb)
-                        if ph_path and os.path.exists(ph_path):
-                            width, height, fixed_thumb = await fix_thumb(ph_path)
-                            if fixed_thumb:
-                                ph_path = fixed_thumb
-                            else:
-                                os.remove(ph_path)
-                                ph_path = None
-                    except Exception as e:
-                        print(f"Erreur téléchargement thumbnail personnalisé: {e}")
-                        ph_path = None
+                    ph_path = await client.download_media(c_thumb)
+                    if ph_path:
+                        width, height, ph_path = await fix_thumb(ph_path)
                 
                 if not ph_path and media_type == "video":
-                    try:
-                        if (hasattr(message, 'video') and message.video 
-                            and hasattr(message.video, 'thumbs') 
-                            and message.video.thumbs
-                            and len(message.video.thumbs) > 0):
-                            
-                            ph_path = await client.download_media(message.video.thumbs[0].file_id)
-                            if ph_path and os.path.exists(ph_path):
-                                width, height, fixed_thumb = await fix_thumb(ph_path)
-                                if fixed_thumb:
-                                    ph_path = fixed_thumb
-                                else:
-                                    os.remove(ph_path)
-                                    ph_path = None
-                        
-                        if not ph_path and os.path.exists(path):
-                            try:
-                                duration = get_media_duration(path)
-                                screenshot_time = min(30, int(duration) // 2) if duration else 5
-                                ph_path = await take_screen_shot(path, "downloads/", screenshot_time)
-                                
-                                if ph_path and os.path.exists(ph_path):
-                                    width, height, fixed_thumb = await fix_thumb(ph_path)
-                                    if fixed_thumb:
-                                        ph_path = fixed_thumb
-                                    else:
-                                        os.remove(ph_path)
-                                        ph_path = None
-                            except Exception as e:
-                                print(f"Erreur génération capture écran: {e}")
-                                ph_path = None
-                    except Exception as e:
-                        print(f"Erreur traitement thumbnail vidéo: {e}")
-                        ph_path = None
-
-                if ph_path and not os.path.exists(ph_path):
-                    ph_path = None
+                    if hasattr(message, 'video') and message.video and message.video.thumbs:
+                        ph_path = await client.download_media(message.video.thumbs[0].file_id)
+                        if ph_path:
+                            width, height, ph_path = await fix_thumb(ph_path)
+                
+                if not ph_path and media_type == "video" and os.path.exists(path):
+                    duration = get_media_duration(path) or 0
+                    screenshot_time = min(30, duration // 2)
+                    ph_path = await take_screen_shot(path, "downloads/", screenshot_time)
+                    if ph_path:
+                        width, height, ph_path = await fix_thumb(ph_path)
+                
+                if ph_path:
+                    await clean_metadata(ph_path)
 
             except Exception as e:
-                print(f"Erreur majeure dans la gestion des thumbnails: {e}")
+                print(f"Erreur gestion thumbnail: {e}")
                 ph_path = None
 
             try:
@@ -466,17 +450,6 @@ async def auto_rename_files(client, message):
                         else:
                             width = original_width
                             height = original_height
-            
-            if ph_path:
-                try:
-                    from PIL import Image
-                    with Image.open(ph_path) as img:
-                        data = list(img.getdata())
-                        new_img = Image.new(img.mode, img.size)
-                        new_img.putdata(data)
-                        new_img.save(ph_path, "JPEG", quality=85)
-                except Exception as e:
-                    print(f"Erreur nettoyage métadonnées thumbnail: {e}")
 
             try:
                 if sequential_mode:
