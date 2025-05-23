@@ -521,68 +521,76 @@ def get_filename(extension: str = "", prefix: str = "", suffix: str = "", use_ti
 
 
 
-async def fix_thumb(thumb):
-    if not thumb or not os.path.exists(thumb):
+async def fix_thumb(thumb_path: str) -> tuple[int, int, Optional[str]]:
+    """
+    Redimensionne et convertit une image en format JPEG approprié pour les thumbnails Telegram.
+    Retourne: (width, height, path_du_thumbnail_fixé) ou (0, 0, None) en cas d'erreur
+    """
+    if not thumb_path or not os.path.exists(thumb_path):
         return 0, 0, None
 
-    width = 0
-    height = 0
     try:
-        metadata = extractMetadata(createParser(thumb))
-        if metadata:
-            if metadata.has("width"):
-                width = metadata.get("width")
-            if metadata.has("height"):
-                height = metadata.get("height")
+        if os.path.getsize(thumb_path) == 0:
+            os.remove(thumb_path)
+            return 0, 0, None
 
-        img = Image.open(thumb)
-        img = img.convert("RGB")
-        
-        # Conserver le ratio d'aspect
-        if width > 0 and height > 0:
+        with Image.open(thumb_path) as img:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            width, height = img.size
             new_height = 320
             new_width = int((new_height / height) * width)
-            img = img.resize((new_width, new_height))
-        else:
-            img = img.resize((320, 320))
-        
-        img.save(thumb, "JPEG", quality=85)
-        return width, height, thumb
+            
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+            
+            temp_path = f"{thumb_path}_fixed.jpg"
+            img.save(temp_path, "JPEG", quality=90, optimize=True, progressive=True)
+            
+            if temp_path != thumb_path:
+                os.remove(thumb_path)
+            
+            return width, height, temp_path
 
     except Exception as e:
-        print(f"Erreur lors de la gestion de la miniature : {e}")
+        print(f"Erreur dans fix_thumb: {e}")
         try:
-            os.remove(thumb)
+            os.remove(thumb_path)
         except:
             pass
         return 0, 0, None
 
 async def take_screen_shot(video_file, output_directory, ttl):
+    if not video_file or not os.path.exists(video_file):
+        print("Fichier vidéo invalide ou introuvable")
+        return None
+
+    os.makedirs(output_directory, exist_ok=True)
     out_put_file_name = f"{output_directory}/{time.time()}.jpg"
-    file_genertor_command = [
-        "ffmpeg",
-        "-ss",
-        str(ttl),
-        "-i",
-        video_file,
-        "-vframes",
-        "1",  
-        out_put_file_name
-    ]
+    
     try:
+        file_genertor_command = [
+            "ffmpeg",
+            "-ss",
+            str(ttl),
+            "-i",
+            video_file,
+            "-vframes",
+            "1",
+            out_put_file_name
+        ]
+        
         process = await asyncio.create_subprocess_exec(
             *file_genertor_command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await process.communicate()
-        
-        e_response = stderr.decode().strip()
-        t_response = stdout.decode().strip()
-        if os.path.lexists(out_put_file_name): 
+        print(out_put_file_name)
+        if os.path.lexists(out_put_file_name) and os.path.getsize(out_put_file_name) > 0:
             return out_put_file_name
         else:
-            print(f"Erreur ffmpeg: {e_response}")
+            print(f"Erreur ffmpeg: {stderr.decode().strip()}")
             return None
     except Exception as e:
         print(f"Erreur lors de la capture d'écran de la vidéo: {e}")
