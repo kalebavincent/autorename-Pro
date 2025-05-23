@@ -8,6 +8,9 @@ import math, time
 from shortzy import Shortzy
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from scripts import Txt
+
+import ffmpeg
+
 from config import settings
 
 
@@ -18,16 +21,22 @@ SEASON_PATTERNS = [
     re.compile(r'Saison\s*(\d+)\s*\b(?:Episode|Ep|E)\s*\d+', re.IGNORECASE),
     re.compile(r'S(?P<season>\d+)(?:E|EP)\d+', re.IGNORECASE),
     re.compile(r'S(?P<season>\d+)\s*-\s*E\d+', re.IGNORECASE),
+    re.compile(r'SO?\s*(\d+)\s*EP?\s*\d+', re.IGNORECASE),
 ]
 
 # Patterns for extracting episode numbers
 EPISODE_PATTERNS = [
-    re.compile(r'(?:E|Épisode)\s*-?\s*(\d+)', re.IGNORECASE),
-    re.compile(r'Saison\s*\d+\s*(?:Episode|Ep|E)\s*(\d+)', re.IGNORECASE),
-    re.compile(r'S\d+(?:E|EP)(\d+)', re.IGNORECASE),
-    re.compile(r'S\d+\s*-\s*E(\d+)', re.IGNORECASE),
-    re.compile(r'EP?(\d{2})\b', re.IGNORECASE),
+    re.compile(r'(?:E|Épisode|Ep|Ép)\s*-?\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Saison\s*\d+\s*(?:Episode|Ep|E|Épisode|Ép)\s*(\d+)', re.IGNORECASE),
+    re.compile(r'S\d+(?:E|EP|ÉP)(\d+)', re.IGNORECASE),
+    re.compile(r'S\d+\s*[-~]\s*E(\d+)', re.IGNORECASE),
+    re.compile(r'EP?(\d{2,4})\b', re.IGNORECASE),
+    re.compile(r'ÉP?(\d{2,4})\b', re.IGNORECASE),
     re.compile(r'\b(\d{1,4})\b(?!\s*[pP])', re.IGNORECASE),
+    re.compile(r'Episode\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Épisode\s*(\d+)', re.IGNORECASE),
+    re.compile(r'EP\s*(\d+)', re.IGNORECASE),
+    re.compile(r'ÉP\s*(\d+)', re.IGNORECASE),
 ]
 
 # Patterns for extracting quality
@@ -41,9 +50,13 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*UHD\s*[)\]>}]?', re.IGNORECASE): lambda _: "UHD",
     re.compile(r'[([<{]?\s*HD\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
     re.compile(r'[([<{]?\s*SD\s*[)\]>}]?', re.IGNORECASE): lambda _: "SD",
-    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
+    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*NON\s*COVERTI[EéS]\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
 }
 
 async def extract_season(filename: str) -> Optional[str]:
@@ -119,13 +132,34 @@ async def progress_for_pyrogram(current, total, ud_type, message, start):
             humanbytes(speed),            
             estimated_total_time if estimated_total_time != '' else "0 s"
         )
-        try:
-            await message.edit(
-                text=f"{ud_type}\n\n{tmp}",               
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄᴀɴᴄᴇʟ •", callback_data="close")]])                                               
-            )
-        except:
-            pass
+
+        full_text = f"{ud_type}\n\n{tmp}"
+
+        if len(full_text) <= 4096:
+            try:
+                await message.edit(text=full_text)
+            except Exception as e:
+                print(f"Erreur lors de l'édition du message : {e}")
+                try:
+                    new_message = await message.reply(text=full_text)
+                    message = new_message
+                except Exception as e:
+                    print(f"Erreur lors de la création d'un nouveau message : {e}")
+        else:
+            chunks = [full_text[i:i + 4096] for i in range(0, len(full_text), 4096)]
+            try:
+                await message.edit(text=chunks[0])
+                for chunk in chunks[1:]:
+                    await message.reply(text=chunk)
+            except Exception as e:
+                print(f"Erreur lors de l'envoi du message : {e}")
+                try:
+                    new_message = await message.reply(text=chunks[0])
+                    message = new_message
+                    for chunk in chunks[1:]:
+                        await message.reply(text=chunk)
+                except Exception as e:
+                    print(f"Erreur lors de la création d'un nouveau message : {e}")
 
 def humanbytes(size):    
     if not size:
@@ -158,6 +192,38 @@ def convert(seconds):
     minutes = seconds // 60
     seconds %= 60      
     return "%d:%02d:%02d" % (hour, minutes, seconds)
+
+def get_media_duration(file_path: str) -> float:
+    """
+    Récupère la durée d'un fichier vidéo ou audio en secondes avec ffmpeg.
+    """
+    try:
+        probe = ffmpeg.probe(file_path)
+        
+        if 'format' in probe and 'duration' in probe['format']:
+            duration = probe['format']['duration']
+            if isinstance(duration, (int, float)):
+                return float(duration)
+            elif isinstance(duration, str):
+                return float(duration)
+            else:
+                print(f"Format de durée non pris en charge dans 'format' : {type(duration)}")
+        
+        for stream in probe.get('streams', []):
+            if stream.get('codec_type') in ['video', 'audio'] and 'duration' in stream:
+                duration = stream['duration']
+                if isinstance(duration, (int, float)):
+                    return float(duration)
+                elif isinstance(duration, str):
+                    return float(duration)
+                else:
+                    print(f"Format de durée non pris en charge dans 'streams' : {type(duration)}")
+        
+        print("Aucune durée trouvée dans les métadonnées.")
+        return 0
+    except Exception as e:
+        print(f"Erreur lors de la récupération de la durée : {e}")
+        return 0
 
 async def send_log(b, u):
     if settings.LOG_CHANNEL is not None:
@@ -211,6 +277,83 @@ async def get_shortlink(url, api, link):
     shortzy = Shortzy(api_key=api, base_site=url)
     shortlink = await shortzy.convert(link)
     return shortlink
+
+
+nsfw_keywords = {
+    "general": [
+        "porn", "sex", "nude", "naked", "boobs", "tits", "pussy", "dick", "cock", "ass",
+        "fuck", "blowjob", "cum", "orgasm", "shemale", "erotic", "masturbate", "anal",
+        "hardcore", "bdsm", "fetish", "lingerie", "xxx", "milf", "gay", "lesbian",
+        "threesome", "squirting", "butt plug", "dildo", "vibrator", "escort", "handjob",
+        "striptease", "kinky", "pornstar", "sex tape", "spank", "swinger", "taboo", "cumshot",
+        "deepthroat", "domination", "submission", "handcuffs", "orgy", "roleplay", "sex toy",
+        "voyeur", "cosplay", "adult", "culture", "pornhwa",
+        "netorare", "netori", "netorase", "eromanga", "incest", "stepmom", "stepdad",
+        "stepsister", "stepbrother", "stepson", "stepdaughter", "ntr", "gangbang",
+        "facial", "golden shower", "pegging", "rimming", "rough sex", "dirty talk",
+        "sex chat", "nude pic", "lewd", "titty", "twerk", "breasts", "penis", "vagina",
+        "clitoris", "genitals", "sexual", "kamasutra", "incest", "pedo", "rape", "bondage",
+        "cum inside", "creampie", "sex slave", "sex doll", "sex machine", "latex", "oral sex",
+        "butt", "slut", "whore", "tramp", "skank", "cumdumpster", "cultured", "ecchi", "doujin",
+        "hentai", "smut", "lewd", "waifu", "futanari", "tentacle"
+    ],
+    "hentai": [
+        "hentai", "doujinshi", "ecchi", "yaoi", "shota", "loli", "tentacle", "futanari",
+        "bishoujo", "bishounen", "mecha hentai", "hentai manga", "hentai anime", "smut",
+        "eroge", "visual novel", "h-manga", "h-anime", "adult manga", "18+ anime", "18+ manga",
+        "lewd anime", "lewd manga", "animated porn", "animated sex", "hentai game", "hentai art",
+        "hentai drawing", "hentai doujin", "yaoi hentai", "hentai comic",
+        "hentai picture", "hentai scene", "hentai story", "hentai video", "hentai movie",
+        "hentai episode", "hentai series"
+    ],
+    "abbreviations": [
+        "pr0n", "s3x", "n00d", "fck", "bj", "hj", "l33t", "p0rn", "h3ntai", "h-ntai", "pnwh",
+        "p0rnhwa", "l33tsp34k", "l3wd", "cultur3d", "s3xual"
+    ],
+    "offensive_slang": [
+        "slut", "whore", "tramp", "skank", "cumdumpster", "gangbang", "facial", "golden shower",
+        "pegging", "rimming", "rough sex", "dirty talk", "sex chat", "nude pic", "lewd", "titty",
+        "twerk", "breasts", "penis", "vagina", "clitoris", "genitals", "sexual", "kamasutra",
+        "incest", "pedo", "rape", "sex slave", "bondage", "creampie", "cum inside", "sex doll",
+        "sex machine", "latex", "oral sex", "cumshot", "deepthroat", "domination", "submission",
+        "handcuffs", "orgy", "roleplay", "sex toy", "voyeur", "cosplay", "adult", "culture",
+        "anal", "erotic", "masturbate", "hardcore", "bdsm", "fetish", "lingerie", "milf", "taboo"
+    ]
+}
+
+exception_keywords = ["nxivm", "classroom", "assassination", "geass"]
+
+async def check_anti_nsfw(new_name: str, message) -> bool:
+    """
+    Vérifie si un nom de fichier contient du contenu NSFW en utilisant une liste de mots-clés.
+    Si un mot-clé NSFW est trouvé, envoie un message d'avertissement.
+
+    :param new_name: Le nom de fichier à vérifier.
+    :param message: L'objet message pour répondre à l'utilisateur.
+    :return: True si du contenu NSFW est détecté, False sinon.
+    """
+    try:
+        lower_name = new_name.lower()
+
+        for keyword in exception_keywords:
+            if keyword.lower() in lower_name:
+                return False  
+
+        for category, keywords in nsfw_keywords.items():
+            for keyword in keywords:
+                if keyword.lower() in lower_name:
+                    await message.reply_text(
+                        f"⚠️ **Du contenue NSFW Detecté**\n"
+                        f"Votre fichier contient du contenue pour adulte.\n"
+                        f"Ce contenue sont interdit sur ce bot.\n"
+                    )
+                    return True 
+
+        return False  
+
+    except Exception as e:
+        print(f"Error in check_anti_nsfw: {e}")
+        return False  
 
 # # Example usage
 # import asyncio
