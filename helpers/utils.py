@@ -26,12 +26,17 @@ SEASON_PATTERNS = [
 
 # Patterns for extracting episode numbers
 EPISODE_PATTERNS = [
-    re.compile(r'(?:E|Épisode)\s*-?\s*(\d+)', re.IGNORECASE),
-    re.compile(r'Saison\s*\d+\s*(?:Episode|Ep|E)\s*(\d+)', re.IGNORECASE),
-    re.compile(r'S\d+(?:E|EP)(\d+)', re.IGNORECASE),
-    re.compile(r'S\d+\s*-\s*E(\d+)', re.IGNORECASE),
-    re.compile(r'EP?(\d{2})\b', re.IGNORECASE),
+    re.compile(r'(?:E|Épisode|Ep|Ép)\s*-?\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Saison\s*\d+\s*(?:Episode|Ep|E|Épisode|Ép)\s*(\d+)', re.IGNORECASE),
+    re.compile(r'S\d+(?:E|EP|ÉP)(\d+)', re.IGNORECASE),
+    re.compile(r'S\d+\s*[-~]\s*E(\d+)', re.IGNORECASE),
+    re.compile(r'EP?(\d{2,4})\b', re.IGNORECASE),
+    re.compile(r'ÉP?(\d{2,4})\b', re.IGNORECASE),
     re.compile(r'\b(\d{1,4})\b(?!\s*[pP])', re.IGNORECASE),
+    re.compile(r'Episode\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Épisode\s*(\d+)', re.IGNORECASE),
+    re.compile(r'EP\s*(\d+)', re.IGNORECASE),
+    re.compile(r'ÉP\s*(\d+)', re.IGNORECASE),
 ]
 
 # Patterns for extracting quality
@@ -45,9 +50,13 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*UHD\s*[)\]>}]?', re.IGNORECASE): lambda _: "UHD",
     re.compile(r'[([<{]?\s*HD\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
     re.compile(r'[([<{]?\s*SD\s*[)\]>}]?', re.IGNORECASE): lambda _: "SD",
-    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
+    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*NON\s*COVERTI[EéS]\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
 }
 
 async def extract_season(filename: str) -> Optional[str]:
