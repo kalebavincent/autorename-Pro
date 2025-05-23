@@ -8,7 +8,7 @@ from pyrogram.types import (
     InlineKeyboardMarkup,
 )
 from PIL import Image
-from datetime import datetime
+from datetime import datetime, timedelta
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from helpers.utils import (
@@ -33,7 +33,6 @@ import time
 import re
 import subprocess
 import asyncio
-from hachoir.metadata import extractMetadata
 import uuid
 
 # Variables globales pour gérer les opérations
@@ -41,6 +40,118 @@ renaming_operations = {}
 secantial_operations = {}
 user_semaphores = {}
 user_queue_messages = {}
+last_refresh = {}
+
+def get_user_dirs(user_id: int) -> dict:
+    """Retourne les chemins des dossiers spécifiques à l'utilisateur"""
+    return {
+        "downloads": os.path.join("downloads", str(user_id)),
+        "metadata": os.path.join("Metadata", str(user_id)),
+        "thumbnails": os.path.join("thumbnails", str(user_id)),
+        "temp": os.path.join("temp", str(user_id))
+    }
+
+def ensure_user_dirs(user_id: int):
+    """Crée les dossiers spécifiques à l'utilisateur s'ils n'existent pas"""
+    dirs = get_user_dirs(user_id)
+    for dir_path in dirs.values():
+        os.makedirs(dir_path, exist_ok=True)
+    return dirs
+
+async def clean_user_files(user_id: int):
+    """Nettoie tous les fichiers temporaires d'un utilisateur"""
+    deleted_count = 0
+    dirs = get_user_dirs(user_id)
+    
+    for dir_type, dir_path in dirs.items():
+        if not os.path.exists(dir_path):
+            continue
+            
+        for filename in os.listdir(dir_path):
+            file_path = os.path.join(dir_path, filename)
+            try:
+                os.remove(file_path)
+                deleted_count += 1
+            except Exception as e:
+                print(f"Erreur suppression {file_path}: {e}")
+    
+    return deleted_count
+
+async def cleanup_temp_files(user_id: int, file_paths: list):
+    """Nettoie les fichiers temporaires après traitement"""
+    user_dirs = get_user_dirs(user_id)
+    for file_path in file_paths:
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            print(f"Erreur suppression {file_path}: {e}")
+    
+    # Nettoyage des dossiers vides
+    for dir_path in user_dirs.values():
+        try:
+            if os.path.exists(dir_path) and not os.listdir(dir_path):
+                os.rmdir(dir_path)
+        except Exception as e:
+            print(f"Erreur nettoyage dossier {dir_path}: {e}")
+
+@Client.on_message(filters.command(["cleanup", "cancel"]) & filters.private)
+async def cleanup_user_files_command(client, message):
+    user_id = message.from_user.id
+    
+    # Vérification du cooldown
+    if user_id in last_refresh:
+        elapsed = datetime.now() - last_refresh[user_id]
+        if elapsed < timedelta(hours=1):
+            remaining = timedelta(hours=1) - elapsed
+            hours = remaining.seconds // 3600
+            minutes = (remaining.seconds % 3600) // 60
+            return await message.reply_text(
+                f"⏳ Veuillez attendre {hours}h {minutes}min "
+                "avant de pouvoir utiliser cette commande à nouveau." 
+            )
+    
+    try:
+        # Libération des structures de données
+        if user_id in renaming_operations:
+            del renaming_operations[user_id]
+        
+        if user_id in secantial_operations:
+            del secantial_operations[user_id]
+        
+        if user_id in user_semaphores:
+            try:
+                user_semaphores[user_id].release()
+            except ValueError:
+                pass
+            del user_semaphores[user_id]
+        
+        if user_id in user_queue_messages:
+            for msg in user_queue_messages[user_id]:
+                try:
+                    await msg.delete()
+                except:
+                    pass
+            del user_queue_messages[user_id]
+        
+        # Nettoyage des fichiers
+        deleted_count = await clean_user_files(user_id)
+        
+        # Mise à jour du cooldown
+        last_refresh[user_id] = datetime.now()
+        
+        await message.reply_text(
+            f"🧹 **Nettoyage terminé !**\n\n"
+            f"• Fichiers supprimés : {deleted_count}\n"
+            f"• Prochain nettoyage possible dans 1 heure."
+        )
+        
+    except Exception as e:
+        print(f"Erreur cleanup pour {user_id}: {e}")
+        await message.reply_text(
+            "❌ Une erreur est survenue lors du nettoyage. "
+            "Veuillez réessayer plus tard."
+        )
 
 async def clean_metadata(file_path):
     """Nettoie les métadonnées problématiques d'un fichier"""
@@ -57,18 +168,19 @@ async def clean_metadata(file_path):
         print(f"Erreur nettoyage métadonnées : {e}")
         return False
 
-
 async def get_user_semaphore(user_id):
     if user_id not in user_semaphores:
         user_semaphores[user_id] = asyncio.Semaphore(3)
     return user_semaphores[user_id]
-
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):
     user_id = message.from_user.id
     ph_path = None
     user_data = await hyoshcoder.read_user(user_id)
+    user_dirs = ensure_user_dirs(user_id)
+    temp_files_to_clean = []
+    
     if not user_data:
         return await message.reply_text(
             "❌ ɪᴍᴘᴏssɪʙʟᴇ ᴅᴇ ᴄʜᴀʀɢᴇʀ ᴠᴏs ɪɴꜰᴏʀᴍᴀᴛɪᴏɴs. ᴠᴇᴜɪʟʟᴇᴢ ᴠᴏᴜs ɪɴsᴄʀɪʀᴇ /start."
@@ -101,7 +213,7 @@ async def auto_rename_files(client, message):
             use_timestamp=True
         )
         mime_type = message.document.mime_type
-        ext =  determine_file_extension(mime_type, original_name)
+        ext = determine_file_extension(mime_type, original_name)
         file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "document"
 
@@ -113,7 +225,7 @@ async def auto_rename_files(client, message):
             use_timestamp=True
         )
         mime_type = message.video.mime_type or "video/mp4"
-        ext =  determine_file_extension(mime_type, original_name)
+        ext = determine_file_extension(mime_type, original_name)
         file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "video"
 
@@ -125,7 +237,7 @@ async def auto_rename_files(client, message):
             use_timestamp=True
         )
         mime_type = message.audio.mime_type or "audio/mpeg"
-        ext =  determine_file_extension(mime_type, original_name)
+        ext = determine_file_extension(mime_type, original_name)
         file_name = f"{os.path.splitext(original_name)[0]}{ext}"
         media_type = media_preference if media_preference else "audio"
 
@@ -226,10 +338,9 @@ async def auto_rename_files(client, message):
 
         _, file_extension = os.path.splitext(file_name)
         renamed_file_name = f"{format_template}{file_extension}"
-        renamed_file_path = f"downloads/{renamed_file_name}"
-        metadata_file_path = f"Metadata/{renamed_file_name}"
-        os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
-        os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+        renamed_file_path = os.path.join(user_dirs["downloads"], renamed_file_name)
+        metadata_file_path = os.path.join(user_dirs["metadata"], renamed_file_name)
+        temp_files_to_clean.extend([renamed_file_path, metadata_file_path])
 
         nsfw_detected = await check_anti_nsfw(renamed_file_name, message)
         if nsfw_detected:
@@ -239,7 +350,11 @@ async def auto_rename_files(client, message):
             return
 
         file_uuid = str(uuid.uuid4())[:8]
-        renamed_file_path_with_uuid = f"{renamed_file_path}_{file_uuid}"
+        renamed_file_path_with_uuid = os.path.join(
+            user_dirs["downloads"], 
+            f"{os.path.splitext(renamed_file_name)[0]}_{file_uuid}{file_extension}"
+        )
+        temp_files_to_clean.append(renamed_file_path_with_uuid)
 
         await queue_message.edit_text(f"📥 **ᴛᴇ́ʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
 
@@ -249,7 +364,7 @@ async def auto_rename_files(client, message):
                 file_name=renamed_file_path_with_uuid,
                 progress=progress_for_pyrogram,
                 progress_args=(
-                    "ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...",
+                    "ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ �ɴ ᴄᴏᴜʀs...",
                     queue_message,
                     time.time(),
                 ),
@@ -267,7 +382,7 @@ async def auto_rename_files(client, message):
             real_mime, real_ext = verify_actual_file_type(path)
             if not real_mime:
                 real_mime = "video/mp4"
-            file_ext =  determine_file_extension(real_mime, renamed_file_path)
+            file_ext = determine_file_extension(real_mime, renamed_file_path)
 
             current_ext = os.path.splitext(renamed_file_path)[1]
             if file_ext.lower() != current_ext.lower():
@@ -275,7 +390,7 @@ async def auto_rename_files(client, message):
                 os.rename(path, corrected_path)
                 path = corrected_path
                 renamed_file_path = corrected_path
-                metadata_file_path = f"Metadata/{os.path.basename(corrected_path)}"
+                metadata_file_path = os.path.join(user_dirs["metadata"], os.path.basename(corrected_path))
                 renamed_file_name = os.path.basename(corrected_path) 
                 await queue_message.edit_text(f"✅ Extension corrigée : {file_ext}")
 
@@ -315,6 +430,7 @@ async def auto_rename_files(client, message):
 
                             if process.returncode == 0:
                                 metadata_added = True
+                                temp_files_to_clean.append(path)  # Ajouter l'ancien fichier au nettoyage
                                 path = metadata_file_path
 
                                 if (
@@ -355,7 +471,7 @@ async def auto_rename_files(client, message):
                 f"📤 **ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`"
             )
             await asyncio.sleep(5)
-            # ph_path = None
+            
             c_caption = await hyoshcoder.get_caption(message.chat.id)
             c_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
 
@@ -390,19 +506,29 @@ async def auto_rename_files(client, message):
                 if c_thumb:
                     ph_path = await client.download_media(c_thumb)
                     if ph_path:
+                        # Déplacer la thumbnail dans le dossier utilisateur
+                        thumb_path = os.path.join(user_dirs["thumbnails"], os.path.basename(ph_path))
+                        os.rename(ph_path, thumb_path)
+                        ph_path = thumb_path
+                        temp_files_to_clean.append(ph_path)
                         width, height, ph_path = await fix_thumb(ph_path)
                 
                 if not ph_path and media_type == "video":
                     if hasattr(message, 'video') and message.video and message.video.thumbs:
                         ph_path = await client.download_media(message.video.thumbs[0].file_id)
                         if ph_path:
+                            thumb_path = os.path.join(user_dirs["thumbnails"], os.path.basename(ph_path))
+                            os.rename(ph_path, thumb_path)
+                            ph_path = thumb_path
+                            temp_files_to_clean.append(ph_path)
                             width, height, ph_path = await fix_thumb(ph_path)
                 
                 if not ph_path and media_type == "video" and os.path.exists(path):
                     duration = get_media_duration(path) or 0
                     screenshot_time = min(30, duration // 2)
-                    ph_path = await take_screen_shot(path, "downloads/", screenshot_time)
+                    ph_path = await take_screen_shot(path, user_dirs["thumbnails"], screenshot_time)
                     if ph_path:
+                        temp_files_to_clean.append(ph_path)
                         width, height, ph_path = await fix_thumb(ph_path)
                 
                 if ph_path:
@@ -607,27 +733,15 @@ async def auto_rename_files(client, message):
                             ),
                         )
             except Exception as e:
-                os.remove(renamed_file_path)
-                if ph_path:
-                    os.remove(ph_path)
-                    del renaming_operations[file_id]
-                    secantial_operations[user_id]["expected_count"] -= 1
-                return await queue_message.edit_text(f"❌ **Erreur :** {e}")
-
-            os.remove(renamed_file_path)
-            if ph_path:
-                os.remove(ph_path)
+                await queue_message.edit_text(f"❌ **Erreur :** {e}")
+                raise e
+            finally:
+                await cleanup_temp_files(user_id, temp_files_to_clean)
 
             await queue_message.delete()
 
         finally:
             await hyoshcoder.degrade_points(user_id, 1)
-            if os.path.exists(renamed_file_path):
-                os.remove(renamed_file_path)
-            if os.path.exists(metadata_file_path):
-                os.remove(metadata_file_path)
-            if ph_path and os.path.exists(ph_path):
-                os.remove(ph_path)
             if file_id in renaming_operations:
                 del renaming_operations[file_id]
     finally:
