@@ -24,6 +24,7 @@ from helpers.utils import (
     determine_file_extension,
     take_screen_shot,
     verify_actual_file_type,
+    check_anti_nsfw
 )
 from database.data import hyoshcoder
 from config import settings
@@ -214,6 +215,13 @@ async def auto_rename_files(client, message):
         metadata_file_path = f"Metadata/{renamed_file_name}"
         os.makedirs(os.path.dirname(renamed_file_path), exist_ok=True)
         os.makedirs(os.path.dirname(metadata_file_path), exist_ok=True)
+
+        nsfw_detected = await check_anti_nsfw(renamed_file_name, message)
+        if nsfw_detected:
+            del renaming_operations[file_id]
+            secantial_operations[user_id]["expected_count"] -= 1
+            user_semaphore.release()
+            return
 
         file_uuid = str(uuid.uuid4())[:8]
         renamed_file_path_with_uuid = f"{renamed_file_path}_{file_uuid}"
