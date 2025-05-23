@@ -583,7 +583,6 @@ async def take_screen_shot(video_file, output_directory, ttl):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await process.communicate()
-        print(out_put_file_name)
         if os.path.lexists(out_put_file_name) and os.path.getsize(out_put_file_name) > 0:
             return out_put_file_name
         else:
