@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 import math
 import os
@@ -16,8 +17,10 @@ import os
 from typing import Tuple
 mimetypes.init()
 import ffmpeg
-
 from config import settings
+from PIL import Image
+from hachoir.metadata import extractMetadata
+from hachoir.parser import createParser
 
 
 
@@ -515,3 +518,72 @@ def get_filename(extension: str = "", prefix: str = "", suffix: str = "", use_ti
 
 # # Run the async main function
 # asyncio.run(main())
+
+
+
+async def fix_thumb(thumb):
+    if not thumb or not os.path.exists(thumb):
+        return 0, 0, None
+
+    width = 0
+    height = 0
+    try:
+        metadata = extractMetadata(createParser(thumb))
+        if metadata:
+            if metadata.has("width"):
+                width = metadata.get("width")
+            if metadata.has("height"):
+                height = metadata.get("height")
+
+        img = Image.open(thumb)
+        img = img.convert("RGB")
+        
+        # Conserver le ratio d'aspect
+        if width > 0 and height > 0:
+            new_height = 320
+            new_width = int((new_height / height) * width)
+            img = img.resize((new_width, new_height))
+        else:
+            img = img.resize((320, 320))
+        
+        img.save(thumb, "JPEG", quality=85)
+        return width, height, thumb
+
+    except Exception as e:
+        print(f"Erreur lors de la gestion de la miniature : {e}")
+        try:
+            os.remove(thumb)
+        except:
+            pass
+        return 0, 0, None
+
+async def take_screen_shot(video_file, output_directory, ttl):
+    out_put_file_name = f"{output_directory}/{time.time()}.jpg"
+    file_genertor_command = [
+        "ffmpeg",
+        "-ss",
+        str(ttl),
+        "-i",
+        video_file,
+        "-vframes",
+        "1",  
+        out_put_file_name
+    ]
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *file_genertor_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        
+        e_response = stderr.decode().strip()
+        t_response = stdout.decode().strip()
+        if os.path.lexists(out_put_file_name): 
+            return out_put_file_name
+        else:
+            print(f"Erreur ffmpeg: {e_response}")
+            return None
+    except Exception as e:
+        print(f"Erreur lors de la capture d'écran de la vidéo: {e}")
+        return None

@@ -12,6 +12,7 @@ from datetime import datetime
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
 from helpers.utils import (
+    fix_thumb,
     get_filename,
     progress_for_pyrogram,
     humanbytes,
@@ -21,6 +22,7 @@ from helpers.utils import (
     extract_season,
     get_media_duration,
     determine_file_extension,
+    take_screen_shot,
     verify_actual_file_type,
 )
 from database.data import hyoshcoder
@@ -360,11 +362,27 @@ async def auto_rename_files(client, message):
             else:
                 caption = f"**{renamed_file_name}**"
 
-            if c_thumb:
-                ph_path = await client.download_media(c_thumb)
-            elif media_type == "video" and message.video.thumbs:
-                ph_path = await client.download_media(message.video.thumbs[0].file_id)
-            else:
+            # Gestion des thumbnails
+            ph_path = None
+            try:
+                if c_thumb:
+                    ph_path = await client.download_media(c_thumb)
+                elif media_type == "video":
+                    if hasattr(message, 'video') and message.video:
+                        if hasattr(message.video, 'thumbs') and message.video.thumbs:
+                            ph_path = await client.download_media(message.video.thumbs[0].file_id)
+                        else:
+                            try:
+                                video_duration = get_media_duration(path)
+                                screenshot_time = min(30, int(video_duration) // 2) if video_duration else 10
+                                ph_path = await take_screen_shot(path, "downloads/", screenshot_time)
+                                if ph_path:
+                                    width, height, ph_path = await fix_thumb(ph_path)
+                            except Exception as e:
+                                print(f"Erreur lors de la génération de la miniature: {e}")
+                                ph_path = None
+            except Exception as e:
+                print(f"Erreur lors du traitement de la miniature: {e}")
                 ph_path = None
 
             try:
