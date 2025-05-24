@@ -350,12 +350,12 @@ async def auto_rename_files(client, message):
         metadata_file_path = os.path.join(user_dirs["metadata"], renamed_file_name)
         temp_files_to_clean.extend([renamed_file_path, metadata_file_path])
 
-        nsfw_detected = await check_anti_nsfw(renamed_file_name, message)
-        if nsfw_detected:
-            del renaming_operations[file_id]
-            secantial_operations[user_id]["expected_count"] -= 1
-            user_semaphore.release()
-            return
+        # nsfw_detected = await check_anti_nsfw(renamed_file_name, message)
+        # if nsfw_detected:
+        #     del renaming_operations[file_id]
+        #     secantial_operations[user_id]["expected_count"] -= 1
+        #     user_semaphore.release()
+        #     return
 
         file_uuid = str(uuid.uuid4())[:8]
         renamed_file_path_with_uuid = os.path.join(
