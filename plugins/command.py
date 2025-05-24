@@ -53,7 +53,6 @@ OFF = [[InlineKeyboardButton('mᴇ́tᴀᴅᴏɴᴇᴇs ᴅᴇ́sᴀᴄᴛɪᴠ�
                                                       "deldump",
                                                       "profile",
                                                       "s_allfile",
-                                                      "cancel"
                                                       ]))
 async def command(client, message: Message):
     user_id = message.from_user.id

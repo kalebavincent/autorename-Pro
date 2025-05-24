@@ -98,34 +98,34 @@ async def cleanup_temp_files(user_id: int, file_paths: list):
 @Client.on_message(filters.command(["cleanup", "cancel"]) & filters.private)
 async def cleanup_user_files_command(client, message):
     user_id = message.from_user.id
-    
-    # Vérification du cooldown
+
+    # Vérification du cooldown (5 minutes)
     if user_id in last_refresh:
         elapsed = datetime.now() - last_refresh[user_id]
-        if elapsed < timedelta(hours=1):
-            remaining = timedelta(hours=1) - elapsed
-            hours = remaining.seconds // 3600
-            minutes = (remaining.seconds % 3600) // 60
+        if elapsed < timedelta(minutes=5):
+            remaining = timedelta(minutes=5) - elapsed
+            minutes = remaining.seconds // 60
+            seconds = remaining.seconds % 60
             return await message.reply_text(
-                f"⏳ Veuillez attendre {hours}h {minutes}min "
+                f"⏳ Veuillez attendre {minutes}min {seconds}s "
                 "avant de pouvoir utiliser cette commande à nouveau." 
             )
-    
+
     try:
         # Libération des structures de données
         if user_id in renaming_operations:
             del renaming_operations[user_id]
-        
+
         if user_id in secantial_operations:
             del secantial_operations[user_id]
-        
+
         if user_id in user_semaphores:
             try:
                 user_semaphores[user_id].release()
             except ValueError:
                 pass
             del user_semaphores[user_id]
-        
+
         if user_id in user_queue_messages:
             for msg in user_queue_messages[user_id]:
                 try:
@@ -133,19 +133,19 @@ async def cleanup_user_files_command(client, message):
                 except:
                     pass
             del user_queue_messages[user_id]
-        
+
         # Nettoyage des fichiers
         deleted_count = await clean_user_files(user_id)
-        
+
         # Mise à jour du cooldown
         last_refresh[user_id] = datetime.now()
-        
+
         await message.reply_text(
             f"🧹 **Nettoyage terminé !**\n\n"
             f"• Fichiers supprimés : {deleted_count}\n"
-            f"• Prochain nettoyage possible dans 1 heure."
+            f"• Prochain nettoyage possible dans 5 minutes."
         )
-        
+
     except Exception as e:
         print(f"Erreur cleanup pour {user_id}: {e}")
         await message.reply_text(
@@ -269,6 +269,14 @@ async def auto_rename_files(client, message):
         episode_number = await extract_episode(file_name)
         saison = await extract_season(file_name)
         extracted_qualities = await extract_quality(file_name)
+
+    # Si aucune qualité, épisode ou saison détectée, utiliser les valeurs par défaut
+    if not extracted_qualities or extracted_qualities == "Unknown":
+        extracted_qualities = "Convertie"
+    if not episode_number:
+        episode_number = "01"
+    if not saison:
+        saison = "01"
 
     assurance_message = (
         "**ꜰɪᴄʜɪᴇʀ ᴀᴊᴏᴜᴛᴇ́ ᴀ̀ ʟᴀ ꜰɪʟᴇ ᴅ'ᴀᴛᴛᴇɴᴛᴇ ✅**\n"

@@ -59,9 +59,9 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*UHD\s*[)\]>}]?', re.IGNORECASE): lambda _: "UHD",
     re.compile(r'[([<{]?\s*HD\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
     re.compile(r'[([<{]?\s*SD\s*[)\]>}]?', re.IGNORECASE): lambda _: "SD",
-    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
-    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
-    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "Convertie",
+    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "Convertie",
+    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "Convertie",
     re.compile(r'[([<{]?\s*non\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
     re.compile(r'[([<{]?\s*non\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
     re.compile(r'[([<{]?\s*non\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
@@ -108,13 +108,13 @@ async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
 async def extract_quality(filename: str) -> str:
     """
     Extrait la qualité de la vidéo.
-    Retourne "Unknown" si aucune qualité n'est trouvée.
+    Retourne "Convertie" si aucune qualité n'est trouvée.
     """
     for pattern, extractor in QUALITY_PATTERNS.items():
         match = pattern.search(filename)
         if match:
             return extractor(match)
-    return "Unknown"
+    return "Convertie"
 
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):
