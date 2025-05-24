@@ -364,7 +364,7 @@ async def auto_rename_files(client, message):
                 file_name=renamed_file_path_with_uuid,
                 progress=progress_for_pyrogram,
                 progress_args=(
-                    "ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ �ɴ ᴄᴏᴜʀs...",
+                    "ᴛᴇʟᴇ́ᴄʜᴀʀɢᴇᴍᴇɴᴛ eɴ ᴄᴏᴜʀs...",
                     queue_message,
                     time.time(),
                 ),
@@ -556,7 +556,7 @@ async def auto_rename_files(client, message):
             if metadata and metadata.has("duration"):
                 duration = metadata.get("duration").seconds
 
-            width, height = 320, 180  # Valeurs par défaut
+            width, height = 720, 480  # Valeurs par défaut
 
             if metadata is not None:
                 if metadata.has("duration"):
@@ -571,7 +571,7 @@ async def auto_rename_files(client, message):
 
                     if original_width is not None and original_height is not None:
                         if original_width / original_height != 16 / 9:
-                            height = 180
+                            height = 480
                             width = int(height * 16 / 9)
                         else:
                             width = original_width
