@@ -99,7 +99,6 @@ async def cleanup_temp_files(user_id: int, file_paths: list):
 async def cleanup_user_files_command(client, message):
     user_id = message.from_user.id
 
-    # Vérification du cooldown (5 minutes)
     if user_id in last_refresh:
         elapsed = datetime.now() - last_refresh[user_id]
         if elapsed < timedelta(minutes=5):
@@ -112,7 +111,6 @@ async def cleanup_user_files_command(client, message):
             )
 
     try:
-        # Libération des structures de données
         if user_id in renaming_operations:
             del renaming_operations[user_id]
 
@@ -120,11 +118,11 @@ async def cleanup_user_files_command(client, message):
             del secantial_operations[user_id]
 
         if user_id in user_semaphores:
-            try:
-                user_semaphores[user_id].release()
-            except ValueError:
-                pass
-            del user_semaphores[user_id]
+            while user_semaphores[user_id]._value < 3:
+                try:
+                    user_semaphores[user_id].release()
+                except ValueError:
+                    break
 
         if user_id in user_queue_messages:
             for msg in user_queue_messages[user_id]:
@@ -134,10 +132,8 @@ async def cleanup_user_files_command(client, message):
                     pass
             del user_queue_messages[user_id]
 
-        # Nettoyage des fichiers
         deleted_count = await clean_user_files(user_id)
 
-        # Mise à jour du cooldown
         last_refresh[user_id] = datetime.now()
 
         await message.reply_text(
@@ -171,6 +167,8 @@ async def clean_metadata(file_path):
 async def get_user_semaphore(user_id):
     if user_id not in user_semaphores:
         user_semaphores[user_id] = asyncio.Semaphore(3)
+    elif user_semaphores[user_id]._value <= 0:
+        await asyncio.sleep(1)
     return user_semaphores[user_id]
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
@@ -753,4 +751,5 @@ async def auto_rename_files(client, message):
             if file_id in renaming_operations:
                 del renaming_operations[file_id]
     finally:
-        user_semaphore.release()
+         if user_semaphore.locked(): 
+            user_semaphore.release()
