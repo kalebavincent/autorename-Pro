@@ -15,9 +15,9 @@ import time
 from dotenv import load_dotenv
 load_dotenv()
 
-pyrogram.utils.MIN_CHANNEL_ID =-1002175858655
+pyrogram.utils.MIN_CHANNEL_ID =-1000000000000
 Config = settings
-SUPPORT_CHAT =-1002229122792
+SUPPORT_CHAT =-1002312649950
 
 class Bot(Client):
 
@@ -48,7 +48,6 @@ class Bot(Client):
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
         await hyoshcoder.clear_all_user_channels()
-
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
                 curr = datetime.now(timezone("Africa/Lubumbashi"))
