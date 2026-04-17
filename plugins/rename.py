@@ -606,6 +606,7 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             width=width,
                             height=height,
+                            supports_streaming=True,
                             duration=int(get_media_duration(path)),
                             progress=progress_for_pyrogram,
                             progress_args=(
@@ -716,6 +717,7 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             width=width,
                             height=height,
+                            supports_streaming=True,
                             duration=int(get_media_duration(path)),
                             progress=progress_for_pyrogram,
                             progress_args=(
