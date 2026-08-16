@@ -15,6 +15,7 @@ class Database:
             raise e  
         self.hyoshcoder = self._client[database_name]
         self.col = self.hyoshcoder.user
+        self.channel_col = self.hyoshcoder.channel_templates
 
     def new_user(self, id):
         return dict(
@@ -37,7 +38,12 @@ class Database:
             referrer_id=None,
             sequential_mode=False,
             user_channel=None,
-            src_info="file_name"
+            src_info="file_name",
+            # --- Points de secours (backup) ---
+            backup_points=0,           # Démarre à 0. L'utilisateur doit taper /ilove_thebot dans le groupe pour avoir 50 pts/jour
+            backup_date=None,          # Date UTC ISO de la dernière régénération
+            # --- Police (font) ---
+            font=None,                 # Style de police pour les captions
         )
 
     async def add_user(self, b, m):
@@ -349,6 +355,101 @@ class Database:
             return user.get("referrer_id", None)
         except Exception as e:
             logging.error(f"Error getting reffer for user {id}: {e}")
+            return None
+
+    # ── Points de Secours (Backup Points) ─────────────────────────────────────
+
+    async def get_backup_info(self, id):
+        """Retourne (backup_points, backup_date) pour l'utilisateur."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            if not user:
+                return 50, None
+            bp = user.get("backup_points", 50)
+            bd = user.get("backup_date", None)
+            return bp, bd
+        except Exception as e:
+            logging.error(f"Error getting backup info for user {id}: {e}")
+            return 50, None
+
+    async def reset_backup_points(self, id):
+        """Remet les backup_points à 50 et enregistre la date UTC du jour."""
+        today_utc = datetime.date.today().isoformat()
+        try:
+            await self.col.update_one(
+                {"_id": int(id)},
+                {"$set": {"backup_points": 50, "backup_date": today_utc}},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error resetting backup points for user {id}: {e}")
+
+    async def consume_backup_point(self, id):
+        """Décrémente les backup_points de 1 (min 0)."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            if user:
+                current = user.get("backup_points", 0)
+                new_val = max(0, current - 1)
+                await self.col.update_one(
+                    {"_id": int(id)},
+                    {"$set": {"backup_points": new_val}}
+                )
+        except Exception as e:
+            logging.error(f"Error consuming backup point for user {id}: {e}")
+
+    # ── Police (Font) ──────────────────────────────────────────────────────────
+
+    async def set_font(self, id, font):
+        """Enregistre la police choisie par l'utilisateur."""
+        try:
+            await self.col.update_one(
+                {"_id": int(id)},
+                {"$set": {"font": font}},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error setting font for user {id}: {e}")
+
+    async def get_font(self, id):
+        """Retourne la police de l'utilisateur (ou None)."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("font", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting font for user {id}: {e}")
+            return None
+
+    async def del_font(self, id):
+        """Supprime la police de l'utilisateur."""
+        try:
+            await self.col.update_one(
+                {"_id": int(id)},
+                {"$unset": {"font": ""}}
+            )
+        except Exception as e:
+            logging.error(f"Error deleting font for user {id}: {e}")
+
+    # ── Modèles de Caption par Canal / Groupe ──────────────────────────────────
+
+    async def set_channel_template(self, chat_id: int, template: str):
+        """Sauvegarde le modèle de caption généré pour un canal / groupe."""
+        try:
+            await self.channel_col.update_one(
+                {"_id": int(chat_id)},
+                {"$set": {"template": template}},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error setting channel template for {chat_id}: {e}")
+
+    async def get_channel_template(self, chat_id: int) -> str:
+        """Récupère le modèle de caption du canal / groupe."""
+        try:
+            res = await self.channel_col.find_one({"_id": int(chat_id)})
+            return res.get("template") if res else None
+        except Exception as e:
+            logging.error(f"Error getting channel template for {chat_id}: {e}")
             return None
 
 

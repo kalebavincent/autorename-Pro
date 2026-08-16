@@ -45,12 +45,28 @@ class Bot(Client):
             await web.TCPSite(app, "0.0.0.0", 8080).start()     
         print(f"{me.first_name} Is Started.....✨️")
 
+        # Configuration des commandes du bot dans Telegram
+        try:
+            from pyrogram.types import BotCommand, BotCommandScopeAllPrivateChats
+            commands = [
+                BotCommand("start", "Démarrer le bot 🚀"),
+                BotCommand("uset", "Mes paramètres (miniature, caption, police, etc.) ⚙️"),
+                BotCommand("ilove_thebot", "Régénérer mes 50 points de secours 💙"),
+                BotCommand("set_font", "Choisir une police 🎨"),
+                BotCommand("autorename", "Définir le modèle de renommage 🏷️"),
+                BotCommand("help", "Aide et fonctionnalités ❓"),
+                BotCommand("profile", "Mon profil et mes points 👤"),
+            ]
+            await self.set_bot_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        except Exception as e:
+            print(f"Failed to set bot commands: {e}")
+
         uptime_seconds = int(time.time() - self.start_time)
         uptime_string = str(timedelta(seconds=uptime_seconds))
         await hyoshcoder.clear_all_user_channels()
         for chat_id in [Config.LOG_CHANNEL, SUPPORT_CHAT]:
             try:
-                curr = datetime.now(timezone("Africa/Lubumbashi"))
+                curr = datetime.now(pytz.timezone("Africa/Lubumbashi"))
                 date = curr.strftime('%d %B, %Y')
                 time_str = curr.strftime('%I:%M:%S %p')
                 

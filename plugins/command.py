@@ -374,13 +374,21 @@ async def command(client, message: Message):
             
             elif command == "profile":
                 user = await hyoshcoder.read_user(message.from_user.id)
-                caption = f"Username: {message.from_user.username}\n"
-                caption += f"First Name: {message.from_user.first_name}\n"
-                caption += f"Last Name: {message.from_user.last_name}\n"
-                caption += f"User ID: {message.from_user.id}\n"
-                caption +=f"Points: {user['points']}\n"
+                from plugins.backup_points import get_valid_backup_points
+                bp, _, _ = await get_valid_backup_points(message.from_user.id)
+                font = await hyoshcoder.get_font(message.from_user.id)
+                caption = f"👤 **PROFIL UTILISATEUR**\n\n"
+                caption += f"• **Username:** @{message.from_user.username or 'Aucun'}\n"
+                caption += f"• **Prénom:** {message.from_user.first_name}\n"
+                caption += f"• **ID:** `{message.from_user.id}`\n\n"
+                caption += f"💳 **Points d'abonnement:** `{user.get('points', 0)}`\n"
+                caption += f"🔋 **Points de secours:** `{bp}/{settings.DAILY_BACKUP_POINTS}`\n"
+                caption += f"🎨 **Police:** `{font or 'Aucune'}`\n"
                 
-                await message.reply_photo(img, caption=caption)
+                if img:
+                    await message.reply_photo(img, caption=caption)
+                else:
+                    await message.reply_text(caption)
         
             # elif command =="cancel":
             #     user_id = message.from_user.id

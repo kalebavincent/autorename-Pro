@@ -1,5 +1,6 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
+import pytz
 import math
 import os
 import random
@@ -236,7 +237,7 @@ def get_media_duration(file_path: str) -> float:
 
 async def send_log(b, u):
     if settings.LOG_CHANNEL is not None:
-        curr = datetime.now(timezone("Africa/Lubumbashi"))
+        curr = datetime.now(pytz.timezone("Africa/Lubumbashi"))
         date = curr.strftime('%d %B, %Y')
         time = curr.strftime('%I:%M:%S %p')
         await b.send_message(

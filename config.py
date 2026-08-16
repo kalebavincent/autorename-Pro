@@ -34,6 +34,10 @@ class Settings():
     
     IMAGES = os.environ.get("IMAGES")
     
+    # --- Points de secours ---
+    BACKUP_GROUP_ID = int(os.environ.get("BACKUP_GROUP_ID", 0))
+    DAILY_BACKUP_POINTS = int(os.environ.get("DAILY_BACKUP_POINTS", 70))
+    
     
     
 settings = Settings()
