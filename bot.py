@@ -54,6 +54,7 @@ class Bot(Client):
                 BotCommand("ilove_thebot", "Régénérer mes 50 points de secours 💙"),
                 BotCommand("set_font", "Choisir une police 🎨"),
                 BotCommand("autorename", "Définir le modèle de renommage 🏷️"),
+                BotCommand("bset", "Réglages globales du bot (Admin) ⚙️"),
                 BotCommand("help", "Aide et fonctionnalités ❓"),
                 BotCommand("profile", "Mon profil et mes points 👤"),
             ]

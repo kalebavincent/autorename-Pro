@@ -41,3 +41,21 @@ class Settings():
     
     
 settings = Settings()
+
+config_dict = {
+    "BOT_TOKEN": settings.BOT_TOKEN,
+    "API_ID": settings.API_ID,
+    "API_HASH": settings.API_HASH,
+    "DATA_URI": settings.DATA_URI,
+    "DATA_NAME": settings.DATA_NAME,
+    "ADMIN": settings.ADMIN,
+    "FORCE_SUB_CHANNELS": os.environ.get("FORCE_SUB_CHANNELS", ""),
+    "LOG_CHANNEL": settings.LOG_CHANNEL,
+    "DUMP_CHANNEL": settings.DUMP_CHANNEL,
+    "UPDATE_CHANNEL": settings.UPDATE_CHANNEL,
+    "SUPPORT_GROUP": settings.SUPPORT_GROUP,
+    "IMAGES": settings.IMAGES,
+    "BACKUP_GROUP_ID": settings.BACKUP_GROUP_ID,
+    "DAILY_BACKUP_POINTS": settings.DAILY_BACKUP_POINTS,
+    "WEBHOOK": settings.WEBHOOK,
+}

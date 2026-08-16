@@ -16,6 +16,7 @@ class Database:
         self.hyoshcoder = self._client[database_name]
         self.col = self.hyoshcoder.user
         self.channel_col = self.hyoshcoder.channel_templates
+        self.config_col = self.hyoshcoder.config
 
     def new_user(self, id):
         return dict(
@@ -451,6 +452,28 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting channel template for {chat_id}: {e}")
             return None
+
+    # ── Configurations Bot Globales (/bset) ───────────────────────────────────
+
+    async def update_db_config(self, config_data: dict):
+        """Sauvegarde les variables de configuration modifiées dans MongoDB."""
+        try:
+            await self.config_col.update_one(
+                {"_id": "bot_config"},
+                {"$set": config_data},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error updating db config: {e}")
+
+    async def load_db_config(self) -> dict:
+        """Charge la configuration globale sauvegardée dans MongoDB."""
+        try:
+            res = await self.config_col.find_one({"_id": "bot_config"})
+            return res if res else {}
+        except Exception as e:
+            logging.error(f"Error loading db config: {e}")
+            return {}
 
 
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)
