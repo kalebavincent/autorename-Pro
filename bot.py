@@ -47,18 +47,35 @@ class Bot(Client):
 
         # Configuration des commandes du bot dans Telegram
         try:
-            from pyrogram.types import BotCommand, BotCommandScopeAllPrivateChats
-            commands = [
+            from pyrogram.types import (
+                BotCommand,
+                BotCommandScopeAllPrivateChats,
+                BotCommandScopeAllGroupChats,
+                BotCommandScopeChat,
+            )
+            private_commands = [
                 BotCommand("start", "Démarrer le bot 🚀"),
                 BotCommand("uset", "Mes paramètres (miniature, caption, police, etc.) ⚙️"),
-                BotCommand("ilove_thebot", "Régénérer mes 50 points de secours 💙"),
+                BotCommand("ilove_thebot", "Obtenir le lien du groupe pour vos points 💙"),
                 BotCommand("set_font", "Choisir une police 🎨"),
                 BotCommand("autorename", "Définir le modèle de renommage 🏷️"),
-                BotCommand("bset", "Réglages globales du bot (Admin) ⚙️"),
+                BotCommand("bset", "Réglages globaux du bot (Admin) ⚙️"),
                 BotCommand("help", "Aide et fonctionnalités ❓"),
                 BotCommand("profile", "Mon profil et mes points 👤"),
             ]
-            await self.set_bot_commands(commands, scope=BotCommandScopeAllPrivateChats())
+            await self.set_bot_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
+
+            group_commands = [
+                BotCommand("ilove_thebot", "Régénérer mes points de secours journaliers 💙"),
+            ]
+            await self.set_bot_commands(group_commands, scope=BotCommandScopeAllGroupChats())
+
+            if Config.BACKUP_GROUP_ID:
+                try:
+                    await self.set_bot_commands(group_commands, scope=BotCommandScopeChat(chat_id=Config.BACKUP_GROUP_ID))
+                except Exception as ex:
+                    print(f"Failed to set bot commands for backup group: {ex}")
+
         except Exception as e:
             print(f"Failed to set bot commands: {e}")
 
