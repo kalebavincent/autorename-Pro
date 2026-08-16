@@ -33,6 +33,9 @@ from helpers.font import FontConverter, AVAILABLE_FONTS
 
 logger = logging.getLogger(__name__)
 
+# Temps mort entre chaque édition de message (en secondes) pour éviter le FloodWait Telegram
+EDIT_SLEEP_TIME = 2.5
+
 # Locks par chat pour éviter que deux éditions simultanées s'affrontent
 channel_locks = {}
 
@@ -247,14 +250,16 @@ async def auto_caption_on_edited(client: Client, message: Message):
                 try:
                     await client.edit_message_caption(chat_id, next_id, caption=new_caption)
                     logger.info(f"AutoCaption: Message {next_id} édité avec succès (E:{msg_ep})")
-                    await asyncio.sleep(0.8)  # Pause pour éviter FloodWait
+                    # Temps mort de 2.5s pour éviter le FloodWait Telegram
+                    await asyncio.sleep(EDIT_SLEEP_TIME)
                 except MessageNotModified:
                     pass
                 except FloodWait as f:
-                    logger.warning(f"AutoCaption: FloodWait de {f.value}s sur le message {next_id}. Attente...")
-                    await asyncio.sleep(f.value + 1)
+                    logger.warning(f"AutoCaption: FloodWait de {f.value}s sur le message {next_id}. Attente de {f.value + 2}s...")
+                    await asyncio.sleep(f.value + 2)
                     try:
                         await client.edit_message_caption(chat_id, next_id, caption=new_caption)
+                        await asyncio.sleep(EDIT_SLEEP_TIME)
                     except Exception as ex:
                         logger.error(f"AutoCaption: Échec édition après FloodWait sur {next_id}: {ex}")
                 except Exception as e:
