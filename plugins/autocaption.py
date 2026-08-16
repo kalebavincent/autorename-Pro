@@ -40,6 +40,32 @@ EDIT_SLEEP_TIME = 2.5
 channel_locks = {}
 
 
+def deduce_quality_from_size(file_size_bytes: int) -> str:
+    """
+    Déduit la qualité vidéo en fonction de la taille du fichier si la qualité n'a pas été détectée dans le texte :
+    - < 110 MB -> "Convertie"
+    - 110 MB à 300 MB -> "HD"
+    - 300 MB à 700 MB -> "UHD"
+    - 700 MB à 1024 MB -> "FHD"
+    - > 1024 MB (1 GB) -> "4K"
+    """
+    if not file_size_bytes or file_size_bytes <= 0:
+        return "Convertie"
+
+    mb = file_size_bytes / (1024 * 1024)
+
+    if mb < 110:
+        return "Convertie"
+    elif 110 <= mb < 300:
+        return "HD"
+    elif 300 <= mb < 700:
+        return "UHD"
+    elif 700 <= mb <= 1024:
+        return "FHD"
+    else:
+        return "4K"
+
+
 def extract_formatted_caption(message: Message) -> str:
     """
     Extrait le texte du caption du message en conservant son formatage HTML/Markdown
@@ -162,11 +188,16 @@ async def auto_caption_on_edited(client: Client, message: Message):
         file_name = media.file_name or ""
 
         # 1. Extraire les métadonnées de l'élément édité (caption ou filename)
+        file_size = media.file_size or 0
         ep     = await extract_episode(edited_caption) or await extract_episode(file_name)
         season = await extract_season(edited_caption) or await extract_season(file_name)
         quality = await extract_quality(edited_caption)
         if quality == "Convertie" and file_name:
             quality = await extract_quality(file_name)
+
+        # Si aucune qualité explicite n'a été trouvée dans le texte/filename -> supposer par taille de fichier
+        if quality == "Convertie":
+            quality = deduce_quality_from_size(file_size)
 
         # Retenir la longueur de formatage du numéro d'épisode (ex: "05" -> len 2, "005" -> len 3)
         ep_len = len(ep) if ep and ep.isdigit() else 2
@@ -214,6 +245,7 @@ async def auto_caption_on_edited(client: Client, message: Message):
             # C'est un document ou une vidéo -> procéder à la détection et mise à jour
             target_media = next_msg.document or next_msg.video
             msg_file_name = target_media.file_name or ""
+            msg_file_size = target_media.file_size or 0
             curr_caption = extract_formatted_caption(next_msg)
 
             msg_ep     = await extract_episode(curr_caption) or await extract_episode(msg_file_name)
@@ -221,6 +253,10 @@ async def auto_caption_on_edited(client: Client, message: Message):
             msg_quality = await extract_quality(curr_caption)
             if msg_quality == "Convertie" and msg_file_name:
                 msg_quality = await extract_quality(msg_file_name)
+
+            # Si la qualité est indéterminée -> supposer par la taille du fichier
+            if msg_quality == "Convertie":
+                msg_quality = deduce_quality_from_size(msg_file_size)
 
             # Auto-incrémentation si l'épisode est introuvable
             if not msg_ep and last_ep_num is not None:
