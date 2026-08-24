@@ -20,6 +20,18 @@ _PyroUser.mention = _safe_mention
 import pyrogram.types as _pyro_types
 from button import Button as _SmartButton
 _pyro_types.InlineKeyboardButton = _SmartButton
+
+# Monkey-patch pour AnimatedChatPhoto._parse (fix bug Kurigram si profil photo vide/invalide)
+if hasattr(_pyro_types, "AnimatedChatPhoto"):
+    _orig_anim_parse = getattr(_pyro_types.AnimatedChatPhoto, "_parse", None)
+    async def _safe_anim_parse(client, chat_photo):
+        try:
+            if not getattr(chat_photo, "video_sizes", None):
+                return None
+            return await _orig_anim_parse(client, chat_photo)
+        except Exception:
+            return None
+    _pyro_types.AnimatedChatPhoto._parse = staticmethod(_safe_anim_parse)
 # ──────────────────────────────────────────────────────────────────────────
 
 
