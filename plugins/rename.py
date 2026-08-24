@@ -100,10 +100,10 @@ async def auto_rename_files(client, message):
     backup_pts, _, _ = await get_valid_backup_points(user_id)
     total_points = user_points + backup_pts
 
-    format_template = user_data.get("format_template", "")
-    media_preference = user_data.get("media_preference", "")
-    sequential_mode = user_data.get("sequential_mode", False)
-    src_info = await hyoshcoder.get_src_info(user_id)  
+    format_template  = user_data.get("format_template", "")
+    media_preference = (user_data.get("media_preference") or "").lower().strip()
+    sequential_mode  = user_data.get("sequential_mode", False)
+    src_info         = await hyoshcoder.get_src_info(user_id)
 
     if total_points < 1:
         return await message.reply_text("❌ ᴠᴏᴜs ɴ'ᴀᴠᴇᴢ ᴘᴀs ᴀssᴇᴢ ᴅᴇ ᴘᴏɪɴᴛs ᴘᴏᴜʀ ʀᴇɴᴏᴍᴍᴇʀ ᴜɴ ꜰɪᴄʜɪᴇʀ. ʀᴇᴄʜᴀʀɢᴇᴢ ᴠᴏs ᴘᴏɪɴᴛs.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Free points", callback_data="free_points")]]))
@@ -114,19 +114,31 @@ async def auto_rename_files(client, message):
         )
 
     if message.document:
-        file_id = message.document.file_id
-        file_name = message.document.file_name
-        media_type = media_preference or "document"
+        file_id   = message.document.file_id
+        file_name = message.document.file_name or "file.mkv"
     elif message.video:
-        file_id = message.video.file_id
-        file_name = f"{message.video.file_name}.mp4"
-        media_type = media_preference or "video"
+        file_id   = message.video.file_id
+        file_name = getattr(message.video, "file_name", None) or f"video_{message.video.file_unique_id[:6]}.mp4"
+        if not os.path.splitext(file_name)[1]:
+            file_name += ".mp4"
     elif message.audio:
-        file_id = message.audio.file_id
-        file_name = f"{message.audio.file_name}.mp3"
-        media_type = media_preference or "audio"
+        file_id   = message.audio.file_id
+        file_name = getattr(message.audio, "file_name", None) or f"audio_{message.audio.file_unique_id[:6]}.mp3"
+        if not os.path.splitext(file_name)[1]:
+            file_name += ".mp3"
     else:
         return await message.reply_text("ᴜɴsᴜᴘᴘᴏʀᴛᴇᴅ ꜰɪʟᴇ ᴛʏᴘᴇ")
+
+    # Type de média final pour l'envoi : préférence utilisateur explicite > type de message d'origine
+    if media_preference in ("document", "video", "audio"):
+        media_type = media_preference
+    else:
+        if message.video:
+            media_type = "video"
+        elif message.audio:
+            media_type = "audio"
+        else:
+            media_type = "document"
 
     if file_id in renaming_operations:
         elapsed_time = (datetime.now() - renaming_operations[file_id]).seconds
@@ -336,15 +348,53 @@ async def auto_rename_files(client, message):
                     ph_path = None
 
             try:
+                async def _send_media(target_chat_id, is_log=False):
+                    video_cover = user_data.get("video_cover", False)
+                    if media_type == "video" and video_cover and not is_log and ph_path and os.path.exists(ph_path):
+                        try:
+                            await client.send_photo(
+                                target_chat_id,
+                                photo=ph_path,
+                                caption=f"🖼 **Cover** — `{renamed_file_name}`",
+                            )
+                        except Exception as _cover_err:
+                            print(f"video_cover send failed: {_cover_err}")
+
+                    if media_type == "video":
+                        return await client.send_video(
+                            target_chat_id,
+                            video=path,
+                            caption=caption,
+                            thumb=ph_path,
+                            duration=vid_duration,
+                            width=vid_width,
+                            height=vid_height,
+                            supports_streaming=True,
+                            progress=progress_for_pyrogram,
+                            progress_args=("ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                        )
+                    elif media_type == "audio":
+                        return await client.send_audio(
+                            target_chat_id,
+                            audio=path,
+                            caption=caption,
+                            thumb=ph_path,
+                            duration=vid_duration,
+                            progress=progress_for_pyrogram,
+                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                        )
+                    else:
+                        return await client.send_document(
+                            target_chat_id,
+                            document=path,
+                            thumb=ph_path,
+                            caption=caption,
+                            progress=progress_for_pyrogram,
+                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                        )
+
                 if sequential_mode:
-                    log_message = await client.send_document(
-                        settings.LOG_CHANNEL,
-                        document=path,
-                        thumb=ph_path,
-                        caption=caption,
-                        progress=progress_for_pyrogram,
-                        progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
-                    )
+                    log_message = await _send_media(settings.LOG_CHANNEL, is_log=True)
                     secantial_operations[user_id]["files"].append({
                         "message_id": log_message.id,
                         "file_name": renamed_file_name,
@@ -360,7 +410,7 @@ async def auto_rename_files(client, message):
 
                         user_channel = await hyoshcoder.get_user_channel(user_id)
                         if not user_channel:
-                            user_channel = user_id  
+                            user_channel = user_id
 
                         try:
                             await client.get_chat(user_channel)
@@ -383,7 +433,7 @@ async def auto_rename_files(client, message):
                             for file_info in sorted_files:
                                 await asyncio.sleep(3)  # Pause pour éviter le flood
                                 await client.copy_message(
-                                    user_id,  
+                                    user_id,
                                     settings.LOG_CHANNEL,
                                     file_info["message_id"]
                                 )
@@ -391,50 +441,7 @@ async def auto_rename_files(client, message):
 
                         del secantial_operations[user_id]
                 else:
-                    # ── video_cover : envoie la miniature en tant que photo HD avant la vidéo ──
-                    video_cover = user_data.get("video_cover", False)
-                    if media_type == "video" and video_cover and ph_path and os.path.exists(ph_path):
-                        try:
-                            await client.send_photo(
-                                message.chat.id,
-                                photo=ph_path,
-                                caption=f"🖼 **Cover** — `{renamed_file_name}`",
-                            )
-                        except Exception as _cover_err:
-                            print(f"video_cover send failed: {_cover_err}")
-
-                    if media_type == "document":
-                        await client.send_document(
-                            message.chat.id,
-                            document=path,
-                            thumb=ph_path,
-                            caption=caption,
-                            progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
-                        )
-                    elif media_type == "video":
-                        await client.send_video(
-                            message.chat.id,
-                            video=path,
-                            caption=caption,
-                            thumb=ph_path,
-                            duration=vid_duration,
-                            width=vid_width,
-                            height=vid_height,
-                            supports_streaming=True,
-                            progress=progress_for_pyrogram,
-                            progress_args=("ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
-                        )
-                    elif media_type == "audio":
-                        await client.send_audio(
-                            message.chat.id,
-                            audio=path,
-                            caption=caption,
-                            thumb=ph_path,
-                            duration=0,
-                            progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
-                        )
+                    await _send_media(message.chat.id, is_log=False)
             except Exception as e:
                 os.remove(renamed_file_path)
                 if ph_path:
