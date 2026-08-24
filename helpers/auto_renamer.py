@@ -254,27 +254,28 @@ async def auto_rename_files(client, message):
                 else f"**{renamed_file_name}**"
             )
 
-            # ── Thumbnail : custom > interne > auto-capture à 40% ────────
+            # ── Thumbnail & Cover (exactement comme v-compress) ───────────
+            cover_path = None
             if c_thumb:
                 ph_path = await client.download_media(c_thumb)
+                cover_path = ph_path
             elif media_type == "video" and message.video and getattr(message.video, "thumbs", None):
                 ph_path = await client.download_media(message.video.thumbs[0].file_id)
+                cover_path = ph_path
             elif media_type == "video" and vid_duration > 0:
                 thumb_dir = f"thumbnails/{user_id}"
                 os.makedirs(thumb_dir, exist_ok=True)
-                seek = max(1.0, vid_duration * 0.40)
-                ph_path = await take_screen_shot(path, thumb_dir, seek)
+                out_thumb = os.path.join(thumb_dir, f"thumb_{uuid.uuid4().hex[:6]}.jpg")
+                out_cover = os.path.join(thumb_dir, f"cover_{uuid.uuid4().hex[:6]}.jpg")
+                ts = max(1, int(vid_duration * 0.40))
+                ok_t = await get_video_thumbnail(path, out_thumb, timestamp=ts, resize=True)
+                ok_c = await get_video_thumbnail(path, out_cover, timestamp=ts, resize=False)
+                if ok_t:
+                    ph_path = out_thumb
+                if ok_c:
+                    cover_path = out_cover
 
-            if ph_path and os.path.exists(ph_path):
-                try:
-                    img = Image.open(ph_path).convert("RGB")
-                    w, h = img.size
-                    new_h = 320
-                    new_w = int((new_h / h) * w) if h else 320
-                    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    img.save(ph_path, "JPEG", quality=90)
-                except Exception:
-                    ph_path = None
+            has_video_cover = await hyoshcoder.get_video_cover(user_id)
 
             try:
                 if sequential_mode:
@@ -332,13 +333,13 @@ async def auto_rename_files(client, message):
 
                         del secantial_operations[user_id]
                 else:
-                    # ── video_cover : envoie la miniature en tant que photo HD avant la vidéo ──
-                    video_cover = user_data.get("video_cover", False)
-                    if media_type == "video" and video_cover and ph_path and os.path.exists(ph_path):
+                    # ── video_cover : envoie la miniature en tant que photo HD avant la vidéo (comme v-compress) ──
+                    active_cover = cover_path or ph_path
+                    if media_type == "video" and has_video_cover and active_cover and os.path.exists(active_cover):
                         try:
                             await client.send_photo(
                                 message.chat.id,
-                                photo=ph_path,
+                                photo=active_cover,
                                 caption=f"🖼️ **Cover** — `{renamed_file_name}`",
                             )
                         except Exception as _cover_err:
@@ -358,8 +359,13 @@ async def auto_rename_files(client, message):
                             message.chat.id,
                             video=path,
                             caption=caption,
+                            file_name=renamed_file_name,
                             thumb=ph_path,
-                            duration=0,
+                            video_cover=active_cover if (has_video_cover and active_cover and os.path.exists(active_cover)) else None,
+                            duration=vid_duration,
+                            width=vid_width,
+                            height=vid_height,
+                            supports_streaming=True,
                             progress=progress_for_pyrogram,
                             progress_args=("ᴛéʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
                         )

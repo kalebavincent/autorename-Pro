@@ -310,28 +310,37 @@ async def auto_rename_files(client, message):
                 else f"**{renamed_file_name}**"
             )
 
-            # ── Thumbnail : custom > miniature Telegram > auto-générée ──
+            # ── Thumbnail & Cover (exactement comme v-compress) ───────────
+            cover_path = None
             if c_thumb:
                 ph_path = await client.download_media(c_thumb)
+                cover_path = ph_path
             elif media_type == "video" and message.video and getattr(message.video, "thumbs", None):
                 ph_path = await client.download_media(message.video.thumbs[0].file_id)
+                cover_path = ph_path
             elif media_type == "video" and vid_duration > 0:
                 thumb_dir = f"thumbnails/{user_id}"
                 os.makedirs(thumb_dir, exist_ok=True)
                 out_thumb = os.path.join(thumb_dir, f"thumb_{uuid.uuid4().hex[:6]}.jpg")
+                out_cover = os.path.join(thumb_dir, f"cover_{uuid.uuid4().hex[:6]}.jpg")
                 ts = max(1, int(vid_duration * 0.40))
-                ok = await get_video_thumbnail(path, out_thumb, timestamp=ts, resize=True)
-                if ok:
+                ok_t = await get_video_thumbnail(path, out_thumb, timestamp=ts, resize=True)
+                ok_c = await get_video_thumbnail(path, out_cover, timestamp=ts, resize=False)
+                if ok_t:
                     ph_path = out_thumb
+                if ok_c:
+                    cover_path = out_cover
+
+            has_video_cover = await hyoshcoder.get_video_cover(user_id)
 
             try:
                 async def _send_media(target_chat_id, is_log=False):
-                    video_cover = user_data.get("video_cover", True)
-                    if media_type == "video" and video_cover and not is_log and ph_path and os.path.exists(ph_path):
+                    active_cover = cover_path or ph_path
+                    if media_type == "video" and has_video_cover and not is_log and active_cover and os.path.exists(active_cover):
                         try:
                             await client.send_photo(
                                 target_chat_id,
-                                photo=ph_path,
+                                photo=active_cover,
                                 caption=f"🖼 **Cover** — `{renamed_file_name}`",
                             )
                         except Exception as _cover_err:
@@ -342,7 +351,9 @@ async def auto_rename_files(client, message):
                             target_chat_id,
                             video=path,
                             caption=caption,
+                            file_name=renamed_file_name,
                             thumb=ph_path,
+                            video_cover=active_cover if (has_video_cover and active_cover and os.path.exists(active_cover)) else None,
                             duration=vid_duration,
                             width=vid_width,
                             height=vid_height,
