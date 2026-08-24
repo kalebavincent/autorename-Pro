@@ -87,15 +87,11 @@ async def get_buttons(key=None, edit_type=None):
         all_keys = list(config_dict.keys())
         for k in all_keys[START:20 + START]:
             buttons.button_data(k, f'botset botvar {k}')
-        if STATE == 'view':
-            buttons.button_data('✏️ Passer en Mode Édition', 'botset edit var')
-        else:
-            buttons.button_data('👁️ Passer en Mode Lecture', 'botset view var')
         buttons.button_data('<<', 'botset back')
         buttons.button_data('❌ Fermer', 'botset close')
         for x in range(0, len(all_keys), 20):
             buttons.button_data(str(int(x/20) + 1), f'botset start var {x}', 'footer')
-        msg = f'<b>⚙️ BOT VARIABLES ~ Page {int(START/20) + 1}\nMode actuel :</b> {STATE.upper()}'
+        msg = f'<b>⚙️ BOT VARIABLES ~ Page {int(START/20) + 1}</b>\n<i>Cliquez sur une variable pour la modifier directement.</i>'
     elif key == 'private':
         buttons.button_data('<<', 'botset back')
         buttons.button_data('❌ Fermer', 'botset close')
@@ -184,7 +180,7 @@ async def event_handler(client: Client, query: CallbackQuery, pfunc: partial, rf
 
 @Client.on_callback_query(filters.regex(r'^botset'))
 async def edit_bot_settings(client: Client, query: CallbackQuery):
-    global START, STATE
+    global START
     message = query.message
     data = query.data.split()
     user_id = query.from_user.id
@@ -206,33 +202,30 @@ async def edit_bot_settings(client: Client, query: CallbackQuery):
         await query.answer()
         await update_buttons(message, data[1])
     elif data[1] == 'resetvar':
-        await query.answer("Réinitialisé par défaut !")
         key = data[2]
         value = default_values.get(key, "")
         config_dict[key] = value
         await hyoshcoder.update_db_config({key: value})
         if hasattr(settings, key):
             setattr(settings, key, value)
+        await query.answer(f"Réinitialisé : {key} !")
         await update_buttons(message, 'var')
-    elif data[1] == 'botvar' and STATE == 'edit':
-        await query.answer()
-        pfunc = partial(edit_variable, omsg=message, key=data[2])
-        rfunc = partial(update_buttons, message, 'var')
-        await update_buttons(message, data[2], data[1])
-        asyncio.create_task(event_handler(client, query, pfunc, rfunc))
-    elif data[1] == 'botvar' and STATE == 'view':
+    elif data[1] == 'botvar':
         key = data[2]
-        value = config_dict.get(key, "")
-        masked_val = mask_sensitive_value(key, str(value))
-        await query.answer(f"{key}: {masked_val}", show_alert=True)
-    elif data[1] == 'edit':
-        STATE = 'edit'
-        await query.answer("Mode Édition activé ✏️")
-        await update_buttons(message, data[2])
-    elif data[1] == 'view':
-        STATE = 'view'
-        await query.answer("Mode Lecture activé 👁️")
-        await update_buttons(message, data[2])
+        if key == "WEBHOOK":
+            curr = bool(config_dict.get("WEBHOOK", True))
+            new_val = not curr
+            config_dict["WEBHOOK"] = new_val
+            await hyoshcoder.update_db_config({"WEBHOOK": new_val})
+            setattr(settings, "WEBHOOK", new_val)
+            await query.answer(f"WEBHOOK: {'ON ✅' if new_val else 'OFF ❌'}")
+            await update_buttons(message, 'var')
+        else:
+            await query.answer()
+            pfunc = partial(edit_variable, omsg=message, key=key)
+            rfunc = partial(update_buttons, message, 'var')
+            await update_buttons(message, key, 'botvar')
+            asyncio.create_task(event_handler(client, query, pfunc, rfunc))
     elif data[1] == 'start':
         await query.answer()
         if START != int(data[3]):
