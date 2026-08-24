@@ -59,6 +59,7 @@ class Bot(Client):
                 BotCommand("ilove_thebot", "Obtenir le lien du groupe pour vos points 💙"),
                 BotCommand("set_font", "Choisir une police 🎨"),
                 BotCommand("autorename", "Définir le modèle de renommage 🏷️"),
+                BotCommand("cleanup", "Libérer le sémaphore et la file d'attente 🧹"),
                 BotCommand("bset", "Réglages globaux du bot (Admin) ⚙️"),
                 BotCommand("help", "Aide et fonctionnalités ❓"),
                 BotCommand("profile", "Mon profil et mes points 👤"),

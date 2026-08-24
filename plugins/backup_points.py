@@ -46,6 +46,8 @@ async def get_valid_backup_points(user_id: int) -> tuple:
 
 @Client.on_message(filters.command("ilove_thebot"))
 async def ilove_thebot(client: Client, message: Message):
+    if not message.from_user:
+        return
     user_id   = message.from_user.id
     chat_id   = message.chat.id
     chat_type = message.chat.type.name  # "PRIVATE" | "GROUP" | "SUPERGROUP"

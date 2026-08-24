@@ -15,74 +15,16 @@ import subprocess
 import asyncio
 import uuid
 
-from shutil import rmtree
-from datetime import datetime, timedelta
-
 # Variables globales pour gérer les opérations
 renaming_operations = {}
 secantial_operations = {}
 user_semaphores = {}
 user_queue_messages = {}
-last_refresh = {}
 
 async def get_user_semaphore(user_id):
     if user_id not in user_semaphores:
         user_semaphores[user_id] = asyncio.Semaphore(3)
     return user_semaphores[user_id]
-
-@Client.on_message(filters.private & filters.command(["cleanup", "cancel", "reset_queue", "clear", "refresh"]))
-async def refresh_user_data(client, message):
-    if not message.from_user:
-        return
-    user_id = message.from_user.id
-    
-    # Vérification du cooldown (1 heure)
-    if user_id in last_refresh:
-        elapsed = datetime.now() - last_refresh[user_id]
-        if elapsed < timedelta(hours=1):
-            remaining = timedelta(hours=1) - elapsed
-            return await message.reply_text(
-                f"⏳ Veuillez attendre {remaining.seconds//3600}h {(remaining.seconds%3600)//60}min "
-                "avant de pouvoir utiliser cette commande à nouveau."
-            )
-    
-    deleted = {'files': 0, 'dirs': 0}
-    for base_dir in ['downloads', 'Metadata', 'thumbnails']:
-        user_dir = os.path.join(base_dir, str(user_id))
-        if os.path.exists(user_dir):
-            try:
-                rmtree(user_dir)
-                deleted['dirs'] += 1
-            except Exception as e:
-                print(f"Erreur suppression {user_dir}: {e}")
-
-    for file_id in list(renaming_operations.keys()):
-        if isinstance(file_id, tuple) and file_id[0] == user_id:
-            del renaming_operations[file_id]
-        elif isinstance(file_id, str) and str(user_id) in file_id:
-            del renaming_operations[file_id]
-
-    secantial_operations.pop(user_id, None)
-    user_semaphores.pop(user_id, None)
-    
-    if user_id in user_queue_messages:
-        for msg in user_queue_messages[user_id]:
-            try:
-                await msg.delete()
-            except Exception as e:
-                print(f"Erreur suppression message: {e}")
-        del user_queue_messages[user_id]
-
-    last_refresh[user_id] = datetime.now()
-
-    report_msg = (
-        f"♻️ **Réinitialisation complète effectuée**\n\n"
-        f"• {deleted['dirs']} dossiers utilisateur nettoyés\n"
-        f"• Variables opérationnelles réinitialisées\n\n"
-        f"⏳ Prochain refresh possible dans 1h"
-    )
-    
-    await message.reply_text(report_msg)
 
 @Client.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def auto_rename_files(client, message):

@@ -9,6 +9,8 @@ FORCE_SUB_CHANNELS = settings.FORCE_SUB_CHANNELS
 
 
 async def not_subscribed(_, __, message):
+    if not message.from_user:
+        return False
     for channel in FORCE_SUB_CHANNELS:
         try:
             user = await message._client.get_chat_member(channel, message.from_user.id)
