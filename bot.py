@@ -1,23 +1,42 @@
 import aiohttp, asyncio, warnings, pytz
 from datetime import datetime, timedelta
 from pytz import timezone
+
+# ── Kurigram monkey-patches ────────────────────────────────────────────────
+# Force User.mention to produce safe HTML with quoted href attribute
+# (Kurigram's HTML parser is stricter than Pyrogram 2.x)
+from pyrogram.types import User as _PyroUser
+from html import escape as _html_escape
+
+@property
+def _safe_mention(self):
+    name = _html_escape(self.first_name or str(self.id))
+    return f'<a href="tg://user?id={self.id}">{name}</a>'
+
+_PyroUser.mention = _safe_mention
+
+# Monkey-patch : InlineKeyboardButton → Button intelligent (couleurs automatiques)
+# ❌/annuler/cancel → rouge (DANGER) | ✅/confirmer/oui → vert (SUCCESS)
+import pyrogram.types as _pyro_types
+from button import Button as _SmartButton
+_pyro_types.InlineKeyboardButton = _SmartButton
+# ──────────────────────────────────────────────────────────────────────────
+
+
 from pyrogram import Client, __version__
 from pyrogram.raw.all import layer
 from config import settings
 from database.data import hyoshcoder
 from aiohttp import web
 from route import web_server
-import pyrogram.utils
-import pyromod
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import time
 from dotenv import load_dotenv
 load_dotenv()
 
-pyrogram.utils.MIN_CHANNEL_ID =-1000000000000
 Config = settings
-SUPPORT_CHAT =-1002312649950
+SUPPORT_CHAT = -1002312649950
 
 class Bot(Client):
 
@@ -37,12 +56,12 @@ class Bot(Client):
         await super().start()
         me = await self.get_me()
         self.mention = me.mention
-        self.username = me.username  
-        self.uptime = Config.BOT_UPTIME     
+        self.username = me.username
+        self.uptime = Config.BOT_UPTIME
         if Config.WEBHOOK:
             app = web.AppRunner(await web_server())
-            await app.setup()       
-            await web.TCPSite(app, "0.0.0.0", 8080).start()     
+            await app.setup()
+            await web.TCPSite(app, "0.0.0.0", 8080).start()
         print(f"{me.first_name} Is Started.....✨️")
 
         # Configuration des commandes du bot dans Telegram
@@ -88,11 +107,11 @@ class Bot(Client):
                 curr = datetime.now(pytz.timezone("Africa/Lubumbashi"))
                 date = curr.strftime('%d %B, %Y')
                 time_str = curr.strftime('%I:%M:%S %p')
-                
+
                 await self.send_photo(
                     chat_id=chat_id,
                     photo="https://telegra.ph/file/41a6574ff59f886a79071.jpg",
-                    caption = (
+                    caption=(
                         "**Hinata ᴇsᴛ ʀᴇᴅᴇᴍᴀʀʀᴇᴇ ᴇɴᴄᴏʀᴇ !**\n\n"
                         f"ᴊᴇ ɴ'ᴀɪ ᴘᴀs ᴅᴏʀᴍɪs ᴅᴇᴘᴜɪs​ : `{uptime_string}`"
                     ),

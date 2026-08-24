@@ -39,14 +39,15 @@ async def build_main_text_and_keyboard(user_id: int):
     sub_points  = user_data.get("points", 0)
     bp, _, _    = await get_valid_backup_points(user_id)
 
-    thumb       = user_data.get("file_id", None)
-    caption     = user_data.get("caption", None)
-    font        = user_data.get("font", None)
-    template    = user_data.get("format_template", None)
-    sequential  = user_data.get("sequential_mode", False)
-    src_info    = user_data.get("scr_info", "file_name")
-    metadata    = user_data.get("metadata", True)
-    meta_code   = user_data.get("metadata_code", "@hyoshassistantbot")
+    thumb        = user_data.get("file_id", None)
+    caption      = user_data.get("caption", None)
+    font         = user_data.get("font", None)
+    template     = user_data.get("format_template", None)
+    sequential   = user_data.get("sequential_mode", False)
+    src_info     = user_data.get("scr_info", "file_name")
+    metadata     = user_data.get("metadata", True)
+    meta_code    = user_data.get("metadata_code", "@hyoshassistantbot")
+    video_cover  = user_data.get("video_cover", False)
 
     font_preview    = f"{FONT_EMOJIS.get(font,'▪️')} {FONT_PREVIEWS.get(font, font)}" if font else "aucune"
     caption_preview = f"`{caption[:30]}...`" if caption and len(caption) > 30 else (f"`{caption}`" if caption else "aucune")
@@ -57,13 +58,14 @@ async def build_main_text_and_keyboard(user_id: int):
         "⚙️ **Mes Paramètres AutoRename Pro**\n\n"
         f"💳 **Points d'abonnement** : `{sub_points}`\n"
         f"🔋 **Points de secours (00:00 UTC)** : `{bp}/{settings.DAILY_BACKUP_POINTS}`\n\n"
-        f"🖼️ **Miniature**   : {_check(thumb)} {'définie' if thumb else 'non définie'}\n"
-        f"📝 **Caption**     : {_check(caption)} {caption_preview}\n"
-        f"🎨 **Police**      : {_check(font)} {font_preview}\n"
-        f"🏷️ **Modèle**      : {template_str}\n"
-        f"🔄 **Séquentiel**  : {_check(sequential)} {'Activé' if sequential else 'Désactivé'}\n"
-        f"📌 **Extraire de** : `{src_str}`\n"
-        f"🏷️ **Métadonnées** : {_check(metadata)} {'Active' if metadata else 'Inactive'}\n"
+        f"🖼️ **Miniature**    : {_check(thumb)} {'définie' if thumb else 'non définie'}\n"
+        f"📝 **Caption**      : {_check(caption)} {caption_preview}\n"
+        f"🎨 **Police**       : {_check(font)} {font_preview}\n"
+        f"🏷️ **Modèle**       : {template_str}\n"
+        f"🔄 **Séquentiel**   : {_check(sequential)} {'Activé' if sequential else 'Désactivé'}\n"
+        f"📌 **Extraire de**  : `{src_str}`\n"
+        f"🏷️ **Métadonnées**  : {_check(metadata)} {'Active' if metadata else 'Inactive'}\n"
+        f"🎞️ **Video Cover**  : {_check(video_cover)} {'Activé' if video_cover else 'Désactivé'}\n"
     )
 
     rows = [
@@ -76,11 +78,14 @@ async def build_main_text_and_keyboard(user_id: int):
             InlineKeyboardButton("🏷️ Modèle Nom", callback_data=f"uset {user_id} template"),
         ],
         [
-            InlineKeyboardButton(f"{_check(sequential)} Mode Séquentiel", callback_data=f"uset {user_id} toggle_seq"),
+            InlineKeyboardButton(f"{_check(sequential)} 🔄 Mode Séquentiel", callback_data=f"uset {user_id} toggle_seq"),
             InlineKeyboardButton(f"📍 Extraire: {src_str}", callback_data=f"uset {user_id} toggle_src"),
         ],
         [
-            InlineKeyboardButton(f"{_check(metadata)} Métadonnées", callback_data=f"uset {user_id} toggle_meta"),
+            InlineKeyboardButton(f"{_check(metadata)} 🏷️ Métadonnées", callback_data=f"uset {user_id} toggle_meta"),
+            InlineKeyboardButton(f"{_check(video_cover)} 🎞️ Video Cover", callback_data=f"uset {user_id} toggle_cover"),
+        ],
+        [
             InlineKeyboardButton("💳 Mes Points / Plan", callback_data=f"uset {user_id} points_info"),
         ],
         [
@@ -383,6 +388,13 @@ async def uset_callback(client: Client, query: CallbackQuery):
         curr = await hyoshcoder.get_metadata(owner_id)
         await hyoshcoder.set_metadata(owner_id, not curr)
         await query.answer("🏷️ Métadonnées inversées !")
+        txt, kb = await build_main_text_and_keyboard(owner_id)
+        await message.edit_text(txt, reply_markup=kb)
+
+    elif action == "toggle_cover":
+        new_val = await hyoshcoder.toggle_video_cover(owner_id)
+        status = "✅ Video Cover activé !" if new_val else "☑️ Video Cover désactivé !"
+        await query.answer(status)
         txt, kb = await build_main_text_and_keyboard(owner_id)
         await message.edit_text(txt, reply_markup=kb)
 

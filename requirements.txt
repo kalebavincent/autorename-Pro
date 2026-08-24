@@ -1,4 +1,4 @@
-pyrogram==2.0.80
+kurigram
 TgCrypto
 motor
 dnspython
@@ -7,10 +7,8 @@ Pillow
 aiohttp
 pytz
 humanize
-pyromod
 python-dotenv
 ffmpeg-python
 aiofiles
-aiohttp 
 filetype
 shortzy

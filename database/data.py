@@ -291,15 +291,37 @@ class Database:
                 await self.col.insert_one({"_id": int(id), "sequential_mode": True})
         except Exception as e:
             logging.error(f"Error toggling sequential mode for user {id}: {e}")
-    
+
     async def get_sequential_mode(self, id):
         try:
             user = await self.col.find_one({"_id": int(id)})
             return user.get("sequential_mode", False)
         except Exception as e:
             logging.error(f"Error getting sequential mode for user {id}: {e}")
+
+    async def toggle_video_cover(self, id):
+        """Active/désactive l'envoi de la miniature comme photo HD avant la vidéo."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            if user:
+                new_val = not user.get("video_cover", False)
+                await self.col.update_one({"_id": int(id)}, {"$set": {"video_cover": new_val}})
+                return new_val
+            else:
+                await self.col.insert_one({"_id": int(id), "video_cover": True})
+                return True
+        except Exception as e:
+            logging.error(f"Error toggling video_cover for user {id}: {e}")
             return False
-    
+
+    async def get_video_cover(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return (user or {}).get("video_cover", False)
+        except Exception as e:
+            logging.error(f"Error getting video_cover for user {id}: {e}")
+            return False
+
     async def set_user_channel(self, id, channel_id):
         try:
             user = await self.col.find_one({"_id": int(id)})
