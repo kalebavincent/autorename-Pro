@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import datetime
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
+from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, take_screen_shot
 from database.data import hyoshcoder
 from config import settings
 import os
@@ -203,17 +203,43 @@ async def auto_rename_files(client, message):
                 path = renamed_file_path
 
             await queue_message.edit_text(f"📤 **ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
-            await asyncio.sleep(5)  
+            await asyncio.sleep(5)
             ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
             c_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
 
+            # ── Métadonnées réelles via ffprobe ───────────────────────────
+            vid_width = 0
+            vid_height = 0
+            vid_duration = 0
+            try:
+                import json as _json, shutil as _shutil
+                _ffprobe = _shutil.which("ffprobe") or "ffprobe"
+                _probe_proc = await asyncio.create_subprocess_exec(
+                    _ffprobe, "-v", "error",
+                    "-select_streams", "v:0",
+                    "-show_entries", "stream=width,height:format=duration",
+                    "-of", "json", path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                _probe_out, _ = await _probe_proc.communicate()
+                if _probe_out:
+                    _probe = _json.loads(_probe_out)
+                    _st = (_probe.get("streams") or [{}])[0]
+                    vid_width = int(_st.get("width") or 0)
+                    vid_height = int(_st.get("height") or 0)
+                    vid_duration = int(float((_probe.get("format") or {}).get("duration") or 0))
+            except Exception as _probe_err:
+                print(f"ffprobe error: {_probe_err}")
+            # ─────────────────────────────────────────────────────────────
+
             if message.document:
                 file_size = humanbytes(message.document.file_size)
-                duration = convert(0)
+                duration = convert(vid_duration)
             elif message.video:
                 file_size = humanbytes(message.video.file_size)
-                duration = convert(message.video.duration or 0)
+                duration = convert(vid_duration or message.video.duration or 0)
             else:
                 await queue_message.edit_text("Le message ne contient pas de document ou de vidéo pris en charge.")
                 return
@@ -228,15 +254,27 @@ async def auto_rename_files(client, message):
                 else f"**{renamed_file_name}**"
             )
 
+            # ── Thumbnail : custom > interne > auto-capture à 40% ────────
             if c_thumb:
                 ph_path = await client.download_media(c_thumb)
-            elif media_type == "video" and message.video.thumbs:
+            elif media_type == "video" and message.video and getattr(message.video, "thumbs", None):
                 ph_path = await client.download_media(message.video.thumbs[0].file_id)
+            elif media_type == "video" and vid_duration > 0:
+                thumb_dir = f"thumbnails/{user_id}"
+                os.makedirs(thumb_dir, exist_ok=True)
+                seek = max(1.0, vid_duration * 0.40)
+                ph_path = await take_screen_shot(path, thumb_dir, seek)
 
-            if ph_path:
-                img = Image.open(ph_path).convert("RGB")
-                img = img.resize((320, 320))
-                img.save(ph_path, "JPEG")
+            if ph_path and os.path.exists(ph_path):
+                try:
+                    img = Image.open(ph_path).convert("RGB")
+                    w, h = img.size
+                    new_h = 320
+                    new_w = int((new_h / h) * w) if h else 320
+                    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    img.save(ph_path, "JPEG", quality=90)
+                except Exception:
+                    ph_path = None
 
             try:
                 if sequential_mode:
@@ -294,6 +332,18 @@ async def auto_rename_files(client, message):
 
                         del secantial_operations[user_id]
                 else:
+                    # ── video_cover : envoie la miniature en tant que photo HD avant la vidéo ──
+                    video_cover = user_data.get("video_cover", False)
+                    if media_type == "video" and video_cover and ph_path and os.path.exists(ph_path):
+                        try:
+                            await client.send_photo(
+                                message.chat.id,
+                                photo=ph_path,
+                                caption=f"🖼️ **Cover** — `{renamed_file_name}`",
+                            )
+                        except Exception as _cover_err:
+                            print(f"video_cover send failed: {_cover_err}")
+
                     if media_type == "document":
                         await client.send_document(
                             message.chat.id,
@@ -301,7 +351,7 @@ async def auto_rename_files(client, message):
                             thumb=ph_path,
                             caption=caption,
                             progress=progress_for_pyrogram,
-                            progress_args=("ᴛᴇ́ʟᴇᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
+                            progress_args=("ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs...", queue_message, time.time()),
                         )
                     elif media_type == "video":
                         await client.send_video(
