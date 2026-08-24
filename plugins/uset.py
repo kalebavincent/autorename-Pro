@@ -47,7 +47,7 @@ async def build_main_text_and_keyboard(user_id: int):
     src_info     = user_data.get("scr_info", "file_name")
     metadata     = user_data.get("metadata", True)
     meta_code    = user_data.get("metadata_code", "@hyoshassistantbot")
-    video_cover  = user_data.get("video_cover", False)
+    video_cover  = user_data.get("video_cover", True)
     media_pref   = (user_data.get("media_type") or user_data.get("media_preference") or "document").lower()
 
     font_preview    = f"{FONT_EMOJIS.get(font,'▪️')} {FONT_PREVIEWS.get(font, font)}" if font else "aucune"

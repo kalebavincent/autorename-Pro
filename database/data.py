@@ -45,6 +45,7 @@ class Database:
             backup_date=None,          # Date UTC ISO de la dernière régénération
             # --- Police (font) ---
             font=None,                 # Style de police pour les captions
+            video_cover=True,          # Envoi de la miniature comme photo HD avant la vidéo (True par défaut)
         )
 
     async def add_user(self, b, m):
@@ -305,7 +306,7 @@ class Database:
         try:
             user = await self.col.find_one({"_id": int(id)})
             if user:
-                new_val = not user.get("video_cover", False)
+                new_val = not user.get("video_cover", True)
                 await self.col.update_one({"_id": int(id)}, {"$set": {"video_cover": new_val}})
                 return new_val
             else:
@@ -313,15 +314,15 @@ class Database:
                 return True
         except Exception as e:
             logging.error(f"Error toggling video_cover for user {id}: {e}")
-            return False
+            return True
 
     async def get_video_cover(self, id):
         try:
             user = await self.col.find_one({"_id": int(id)})
-            return (user or {}).get("video_cover", False)
+            return (user or {}).get("video_cover", True)
         except Exception as e:
             logging.error(f"Error getting video_cover for user {id}: {e}")
-            return False
+            return True
 
     async def set_user_channel(self, id, channel_id):
         try:

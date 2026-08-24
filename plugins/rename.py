@@ -349,7 +349,7 @@ async def auto_rename_files(client, message):
 
             try:
                 async def _send_media(target_chat_id, is_log=False):
-                    video_cover = user_data.get("video_cover", False)
+                    video_cover = user_data.get("video_cover", True)
                     if media_type == "video" and video_cover and not is_log and ph_path and os.path.exists(ph_path):
                         try:
                             await client.send_photo(
