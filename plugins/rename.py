@@ -1,12 +1,16 @@
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 from pyrogram.types import InputMediaDocument, Message, InlineKeyboardButton, InlineKeyboardMarkup
-from helpers.utils import take_screen_shot
-from PIL import Image
-from datetime import datetime
-from hachoir.metadata import extractMetadata
-from hachoir.parser import createParser
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season
+from helpers.utils import (
+    progress_for_pyrogram,
+    humanbytes,
+    convert,
+    extract_episode,
+    extract_quality,
+    extract_season,
+    get_video_info,
+    get_video_thumbnail,
+)
 from database.data import hyoshcoder
 from config import settings
 import os
@@ -274,35 +278,16 @@ async def auto_rename_files(client, message):
                 path = renamed_file_path
 
             await queue_message.edit_text(f"📤 **ᴛᴇ́ʟᴇ́ᴠᴇʀsᴇᴍᴇɴᴛ ᴇɴ ᴄᴏᴜʀs :** `{file_name}`")
-            await asyncio.sleep(5)
+            await asyncio.sleep(2)
             ph_path = None
             c_caption = await hyoshcoder.get_caption(message.chat.id)
             c_thumb = await hyoshcoder.get_thumbnail(message.chat.id)
 
-            # ── Métadonnées réelles via ffprobe ───────────────────────────
-            vid_width = 0
-            vid_height = 0
-            vid_duration = 0
-            try:
-                import json as _json, shutil as _shutil
-                _ffprobe = _shutil.which("ffprobe") or "ffprobe"
-                _probe_proc = await asyncio.create_subprocess_exec(
-                    _ffprobe, "-v", "error",
-                    "-select_streams", "v:0",
-                    "-show_entries", "stream=width,height:format=duration",
-                    "-of", "json", path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                _probe_out, _ = await _probe_proc.communicate()
-                if _probe_out:
-                    _probe = _json.loads(_probe_out)
-                    _st = (_probe.get("streams") or [{}])[0]
-                    vid_width = int(_st.get("width") or 0)
-                    vid_height = int(_st.get("height") or 0)
-                    vid_duration = int(float((_probe.get("format") or {}).get("duration") or 0))
-            except Exception as _probe_err:
-                print(f"ffprobe error: {_probe_err}")
+            # ── Informations vidéo réelles via get_video_info (v-compress) ──
+            v_info = await get_video_info(path)
+            vid_width = v_info.get("width", 0)
+            vid_height = v_info.get("height", 0)
+            vid_duration = v_info.get("duration", 0)
             # ─────────────────────────────────────────────────────────────
 
             if message.document:
@@ -325,7 +310,7 @@ async def auto_rename_files(client, message):
                 else f"**{renamed_file_name}**"
             )
 
-            # ── Thumbnail : custom > interne > auto-capture à 40% ────────
+            # ── Thumbnail : custom > miniature Telegram > auto-générée ──
             if c_thumb:
                 ph_path = await client.download_media(c_thumb)
             elif media_type == "video" and message.video and getattr(message.video, "thumbs", None):
@@ -333,19 +318,11 @@ async def auto_rename_files(client, message):
             elif media_type == "video" and vid_duration > 0:
                 thumb_dir = f"thumbnails/{user_id}"
                 os.makedirs(thumb_dir, exist_ok=True)
-                seek = max(1.0, vid_duration * 0.40)
-                ph_path = await take_screen_shot(path, thumb_dir, seek)
-
-            if ph_path and os.path.exists(ph_path):
-                try:
-                    img = Image.open(ph_path).convert("RGB")
-                    w, h = img.size
-                    new_h = 320
-                    new_w = int((new_h / h) * w) if h else 320
-                    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    img.save(ph_path, "JPEG", quality=90)
-                except Exception:
-                    ph_path = None
+                out_thumb = os.path.join(thumb_dir, f"thumb_{uuid.uuid4().hex[:6]}.jpg")
+                ts = max(1, int(vid_duration * 0.40))
+                ok = await get_video_thumbnail(path, out_thumb, timestamp=ts, resize=True)
+                if ok:
+                    ph_path = out_thumb
 
             try:
                 async def _send_media(target_chat_id, is_log=False):

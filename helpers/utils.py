@@ -203,37 +203,80 @@ def convert(seconds):
     seconds %= 60      
     return "%d:%02d:%02d" % (hour, minutes, seconds)
 
-def get_media_duration(file_path: str) -> float:
-    """
-    Récupère la durée d'un fichier vidéo ou audio en secondes avec ffmpeg.
-    """
+import json
+
+async def get_video_info(file_path: str) -> dict:
+    """Récupère largeur, hauteur et durée d'une vidéo via ffprobe (comme v-compress)."""
     try:
-        probe = ffmpeg.probe(file_path)
-        
-        if 'format' in probe and 'duration' in probe['format']:
-            duration = probe['format']['duration']
-            if isinstance(duration, (int, float)):
-                return float(duration)
-            elif isinstance(duration, str):
-                return float(duration)
-            else:
-                print(f"Format de durée non pris en charge dans 'format' : {type(duration)}")
-        
-        for stream in probe.get('streams', []):
-            if stream.get('codec_type') in ['video', 'audio'] and 'duration' in stream:
-                duration = stream['duration']
-                if isinstance(duration, (int, float)):
-                    return float(duration)
-                elif isinstance(duration, str):
-                    return float(duration)
-                else:
-                    print(f"Format de durée non pris en charge dans 'streams' : {type(duration)}")
-        
-        print("Aucune durée trouvée dans les métadonnées.")
-        return 0
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "stream=width,height,duration,codec_type:format=duration",
+            "-of", "json",
+            file_path,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        data = json.loads(stdout.decode())
+
+        duration = 0.0
+        if "format" in data:
+            duration = float(data["format"].get("duration", 0))
+
+        width, height = 0, 0
+        if "streams" in data:
+            for s in data["streams"]:
+                if s.get("codec_type") == "video":
+                    width = int(s.get("width", 0))
+                    height = int(s.get("height", 0))
+                    stream_dur = float(s.get("duration", 0))
+                    if stream_dur > 0:
+                        duration = stream_dur
+                    break
+
+        return {
+            "width": width,
+            "height": height,
+            "duration": int(duration),
+        }
     except Exception as e:
-        print(f"Erreur lors de la récupération de la durée : {e}")
-        return 0
+        print(f"Failed to get video info for {file_path}: {e}")
+    return {"width": 0, "height": 0, "duration": 0}
+
+
+async def get_video_thumbnail(file_path: str, output_thumb: str, timestamp: int = 5, resize: bool = True) -> bool:
+    """Génère une miniature à partir d'une vidéo à un instant T (comme v-compress)."""
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss", str(timestamp),
+            "-i", file_path,
+            "-vframes", "1",
+            "-q:v", "2",
+            output_thumb,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+        )
+        await asyncio.wait_for(proc.wait(), timeout=15)
+        
+        if resize and os.path.exists(output_thumb) and os.path.getsize(output_thumb) > 0:
+            try:
+                with Image.open(output_thumb) as img:
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    img.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                    img.save(output_thumb, "JPEG", quality=95)
+            except Exception as pil_err:
+                print(f"PIL thumbnail optimization failed: {pil_err}")
+                
+        return os.path.exists(output_thumb)
+    except Exception as e:
+        print(f"Failed to generate thumbnail for {file_path}: {e}")
+        return False
 
 async def send_log(b, u):
     if settings.LOG_CHANNEL is not None:
