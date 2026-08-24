@@ -50,45 +50,72 @@ async def ilove_thebot(client: Client, message: Message):
         return
     user_id   = message.from_user.id
     chat_id   = message.chat.id
-    chat_type = message.chat.type.name  # "PRIVATE" | "GROUP" | "SUPERGROUP"
+    chat_type = str(message.chat.type.name if hasattr(message.chat.type, "name") else message.chat.type).upper()
     img       = await get_random_photo()
 
-    # ── Dans le groupe dédié ─────────────────────────────────────────────────
-    if chat_id == BACKUP_GROUP_ID:
+    from config import config_dict
+    target_group_id = int(config_dict.get("BACKUP_GROUP_ID") or getattr(settings, "BACKUP_GROUP_ID", 0) or 0)
+    daily_backup   = int(config_dict.get("DAILY_BACKUP_POINTS") or getattr(settings, "DAILY_BACKUP_POINTS", 70) or 70)
+
+    # ── Dans un groupe (groupe dédié ou tout groupe support) ─────────────────
+    if chat_type in ("GROUP", "SUPERGROUP"):
+        # Si un groupe spécifique est configuré et que la commande est envoyée dans un autre groupe
+        if target_group_id != 0 and chat_id != target_group_id:
+            try:
+                group = await client.get_chat(target_group_id)
+                group_link = f"https://t.me/{group.username}" if group and getattr(group, "username", None) else None
+            except Exception:
+                group_link = None
+
+            link_msg = f"\n👉 [Cliquez ici pour rejoindre le groupe officiel]({group_link})" if group_link else ""
+            try:
+                return await message.reply_text(
+                    f"ℹ️ **Cette commande s'utilise dans notre groupe officiel !**{link_msg}"
+                )
+            except Exception as _e:
+                logger.error(f"Failed to reply in group: {_e}")
+                return
+
         bp, bd, already_done = await get_valid_backup_points(user_id)
-        today_utc = datetime.date.today().isoformat()
 
         if already_done:
-            # Calculer les secondes restantes avant 00:00 UTC
             now_utc   = datetime.datetime.utcnow()
-            midnight  = datetime.datetime(now_utc.year, now_utc.month, now_utc.day) \
-                        + datetime.timedelta(days=1)
+            midnight  = datetime.datetime(now_utc.year, now_utc.month, now_utc.day) + datetime.timedelta(days=1)
             remaining = midnight - now_utc
             hours, rem   = divmod(int(remaining.total_seconds()), 3600)
             minutes, secs = divmod(rem, 60)
 
             txt = (
                 f"⏳ **Points de secours déjà régénérés aujourd'hui !**\n\n"
-                f"🔋 Points restants : **{bp}/{DAILY_BACKUP}**\n"
+                f"🔋 Points restants : **{bp}/{daily_backup}**\n"
                 f"🕛 Prochain reset dans : **{hours}h {minutes}m {secs}s** (00:00 UTC)\n\n"
                 "Utilisez vos points de secours pour renommer des fichiers."
             )
-            await message.reply_text(txt)
-            return
+            try:
+                return await message.reply_text(txt)
+            except Exception as _e:
+                logger.error(f"Failed to reply in group: {_e}")
+                return
 
-        # Pas encore régénérés → reset
+        # Pas encore régénérés aujourd'hui → régénération
         await hyoshcoder.reset_backup_points(user_id)
         txt = (
             f"💙 **{message.from_user.mention} — Points de secours régénérés !**\n\n"
-            f"🔋 **+{DAILY_BACKUP} points de secours** ajoutés à votre compte.\n"
+            f"🔋 **+{daily_backup} points de secours** ajoutés à votre compte.\n"
             f"📅 Valides jusqu'à **00:00 UTC** ce soir.\n\n"
-            "_Ces points s'utilisent automatiquement quand votre quota d'abonnement "
-            "est épuisé._"
+            "_Ces points s'utilisent automatiquement quand votre quota d'abonnement est épuisé._"
         )
-        if img:
-            await message.reply_photo(photo=img, caption=txt)
-        else:
-            await message.reply_text(txt)
+        try:
+            if img:
+                await message.reply_photo(photo=img, caption=txt)
+            else:
+                await message.reply_text(txt)
+        except Exception as _e:
+            logger.error(f"Failed to send backup points reply in group: {_e}")
+            try:
+                await message.reply_text(txt)
+            except Exception:
+                pass
         return
 
     # ── En message privé (ou autre groupe) ───────────────────────────────────
