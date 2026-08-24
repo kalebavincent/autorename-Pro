@@ -48,11 +48,13 @@ async def build_main_text_and_keyboard(user_id: int):
     metadata     = user_data.get("metadata", True)
     meta_code    = user_data.get("metadata_code", "@hyoshassistantbot")
     video_cover  = user_data.get("video_cover", False)
+    media_pref   = user_data.get("media_preference", "document") or "document"
 
     font_preview    = f"{FONT_EMOJIS.get(font,'▪️')} {FONT_PREVIEWS.get(font, font)}" if font else "aucune"
     caption_preview = f"`{caption[:30]}...`" if caption and len(caption) > 30 else (f"`{caption}`" if caption else "aucune")
     template_str    = f"`{template}`" if template else "non défini"
     src_str         = "Nom du fichier" if src_info == "file_name" else "Caption"
+    media_icon      = "🎥" if media_pref == "video" else ("🎵" if media_pref == "audio" else "📄")
 
     text = (
         "⚙️ **Mes Paramètres AutoRename Pro**\n\n"
@@ -66,6 +68,7 @@ async def build_main_text_and_keyboard(user_id: int):
         f"📌 **Extraire de**  : `{src_str}`\n"
         f"🏷️ **Métadonnées**  : {_check(metadata)} {'Active' if metadata else 'Inactive'}\n"
         f"🎞️ **Video Cover**  : {_check(video_cover)} {'Activé' if video_cover else 'Désactivé'}\n"
+        f"📂 **Envoi comme**  : {media_icon} `{media_pref.upper()}`\n"
     )
 
     rows = [
@@ -86,6 +89,7 @@ async def build_main_text_and_keyboard(user_id: int):
             InlineKeyboardButton(f"{_check(video_cover)} 🎞️ Video Cover", callback_data=f"uset {user_id} toggle_cover"),
         ],
         [
+            InlineKeyboardButton(f"{media_icon} Envoi: {media_pref.upper()}", callback_data=f"uset {user_id} toggle_media"),
             InlineKeyboardButton("💳 Mes Points / Plan", callback_data=f"uset {user_id} points_info"),
         ],
         [
@@ -395,6 +399,15 @@ async def uset_callback(client: Client, query: CallbackQuery):
         new_val = await hyoshcoder.toggle_video_cover(owner_id)
         status = "✅ Video Cover activé !" if new_val else "☑️ Video Cover désactivé !"
         await query.answer(status)
+        txt, kb = await build_main_text_and_keyboard(owner_id)
+        await message.edit_text(txt, reply_markup=kb)
+
+    elif action == "toggle_media":
+        curr_user = await hyoshcoder.read_user(owner_id) or {}
+        curr_pref = (curr_user.get("media_preference") or "document").lower()
+        next_pref = "video" if curr_pref == "document" else ("audio" if curr_pref == "video" else "document")
+        await hyoshcoder.set_media_preference(owner_id, next_pref)
+        await query.answer(f"📂 Mode d'envoi réglé sur : {next_pref.upper()}")
         txt, kb = await build_main_text_and_keyboard(owner_id)
         await message.edit_text(txt, reply_markup=kb)
 
