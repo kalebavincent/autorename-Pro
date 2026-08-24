@@ -21,17 +21,15 @@ import pyrogram.types as _pyro_types
 from button import Button as _SmartButton
 _pyro_types.InlineKeyboardButton = _SmartButton
 
-# Monkey-patch pour AnimatedChatPhoto._parse (fix bug Kurigram si profil photo vide/invalide)
-if hasattr(_pyro_types, "AnimatedChatPhoto"):
-    _orig_anim_parse = getattr(_pyro_types.AnimatedChatPhoto, "_parse", None)
-    async def _safe_anim_parse(client, chat_photo):
+# Monkey-patch pour ChatPhoto._parse et AnimatedChatPhoto._parse (fix bug Kurigram si profil photo vide/invalide)
+if hasattr(_pyro_types, "ChatPhoto"):
+    _orig_chatphoto_parse = getattr(_pyro_types.ChatPhoto, "_parse", None)
+    async def _safe_chatphoto_parse(client, chat_photo, *args, **kwargs):
         try:
-            if not getattr(chat_photo, "video_sizes", None):
-                return None
-            return await _orig_anim_parse(client, chat_photo)
+            return await _orig_chatphoto_parse(client, chat_photo, *args, **kwargs)
         except Exception:
             return None
-    _pyro_types.AnimatedChatPhoto._parse = staticmethod(_safe_anim_parse)
+    _pyro_types.ChatPhoto._parse = staticmethod(_safe_chatphoto_parse)
 # ──────────────────────────────────────────────────────────────────────────
 
 
