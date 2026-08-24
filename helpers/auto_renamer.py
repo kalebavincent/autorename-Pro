@@ -5,7 +5,18 @@ from PIL import Image
 from datetime import datetime
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
-from helpers.utils import progress_for_pyrogram, humanbytes, convert, extract_episode, extract_quality, extract_season, take_screen_shot
+from helpers.font import FontConverter
+from helpers.utils import (
+    progress_for_pyrogram,
+    humanbytes,
+    convert,
+    extract_episode,
+    extract_quality,
+    extract_season,
+    take_screen_shot,
+    get_video_info,
+    get_video_thumbnail,
+)
 from database.data import hyoshcoder
 from config import settings
 import os
@@ -253,6 +264,12 @@ async def auto_rename_files(client, message):
                 if c_caption
                 else f"**{renamed_file_name}**"
             )
+            user_font = user_data.get("font") or await hyoshcoder.get_font(user_id)
+            if user_font:
+                try:
+                    caption = FontConverter("").convert(caption, user_font)
+                except Exception as _f_err:
+                    print(f"Font conversion on caption error: {_f_err}")
 
             # ── Thumbnail & Cover (exactement comme v-compress) ───────────
             cover_path = None
