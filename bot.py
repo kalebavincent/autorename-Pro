@@ -52,8 +52,8 @@ class Bot(Client):
         )
         self.start_time = time.time()
 
-    async def start(self):
-        await super().start()
+    async def start(self, *args, **kwargs):
+        await super().start(*args, **kwargs)
         # Charger les configurations de /bset sauvegardées dans MongoDB
         try:
             from config import config_dict
