@@ -118,46 +118,48 @@ async def extract_quality(filename: str) -> str:
     return "Convertie"
 
 
-_last_progress_update = {}
+_progress_last_edit = {}
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
-    msg_id = getattr(message, "id", id(message))
-    last_update = _last_progress_update.get(msg_id, 0)
+    msg_id = getattr(message, "id", None) or id(message)
+    last_edit = _progress_last_edit.get(msg_id, 0)
 
-    if (now - last_update >= 4.0) or current == total:
-        _last_progress_update[msg_id] = now
-        diff = max(now - start, 0.001)
-        percentage = current * 100 / total
-        speed = current / diff
+    # Throttling strict (3.5s) : Évite de bloquer les threads MTProto Telegram avec des requêtes edit_text trop fréquentes
+    if (now - last_edit < 3.5) and current != total:
+        return
 
-        elapsed_time = round(diff) * 1000
-        time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
-        estimated_total_time = elapsed_time + time_to_completion
+    _progress_last_edit[msg_id] = now
+    diff = max(now - start, 0.001)
 
-        elapsed_str = TimeFormatter(milliseconds=elapsed_time)
-        estimated_str = TimeFormatter(milliseconds=estimated_total_time)
+    percentage = current * 100 / total
+    speed = current / diff
+    remaining_bytes = max(total - current, 0)
+    time_to_completion = round(remaining_bytes / max(speed, 1)) * 1000
 
-        completed = math.floor(percentage / 5)
-        progress = "█" * completed + "░" * (20 - completed)
+    estimated_total_time = TimeFormatter(milliseconds=time_to_completion)
 
-        tmp = progress + Txt.PROGRESS_BAR.format(
-            round(percentage, 2),
-            humanbytes(current),
-            humanbytes(total),
-            humanbytes(speed),
-            estimated_str if estimated_str != "" else "0 s"
-        )
+    filled = math.floor(percentage / 5)
+    progress = "█" * filled + "░" * (20 - filled)
 
-        full_text = f"{ud_type}\n\n{tmp}"
+    tmp = progress + Txt.PROGRESS_BAR.format(
+        round(percentage, 2),
+        humanbytes(current),
+        humanbytes(total),
+        humanbytes(speed),
+        estimated_total_time if estimated_total_time != '' else "0 s"
+    )
 
-        try:
-            await message.edit(text=full_text)
-        except Exception:
+    full_text = f"{ud_type}\n\n{tmp}"
+
+    try:
+        await message.edit_text(full_text)
+    except Exception as e:
+        if "MESSAGE_NOT_MODIFIED" not in str(e) and "FLOOD_WAIT" not in str(e):
             pass
 
-        if current == total:
-            _last_progress_update.pop(msg_id, None)
+    if current == total:
+        _progress_last_edit.pop(msg_id, None)
 
 def humanbytes(size):    
     if not size:
