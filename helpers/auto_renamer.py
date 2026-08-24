@@ -333,8 +333,8 @@ async def auto_rename_files(client, message):
 
                         del secantial_operations[user_id]
                 else:
-                    # ── video_cover : envoie la miniature en tant que photo HD avant la vidéo (comme v-compress) ──
-                    active_cover = cover_path or ph_path
+                    # ── video_cover : envoie la miniature (thumb) en tant que photo de couverture ──
+                    active_cover = ph_path or cover_path
                     if media_type == "video" and has_video_cover and active_cover and os.path.exists(active_cover):
                         try:
                             await client.send_photo(

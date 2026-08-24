@@ -335,7 +335,7 @@ async def auto_rename_files(client, message):
 
             try:
                 async def _send_media(target_chat_id, is_log=False):
-                    active_cover = cover_path or ph_path
+                    active_cover = ph_path or cover_path
                     if media_type == "video" and has_video_cover and not is_log and active_cover and os.path.exists(active_cover):
                         try:
                             await client.send_photo(
