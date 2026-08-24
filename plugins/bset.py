@@ -24,9 +24,11 @@ default_values = dict(config_dict)
 def is_admin_user(user_id: int) -> bool:
     """Vérifie si l'utilisateur est dans la liste des ADMINS."""
     admins = settings.ADMIN
-    if isinstance(admins, list):
+    if not admins:
+        return False
+    if isinstance(admins, (list, set, tuple)):
         return user_id in admins or str(user_id) in [str(a) for a in admins]
-    return user_id == admins or str(user_id) == str(admins)
+    return str(user_id) == str(admins)
 
 
 class ButtonMaker:
@@ -116,25 +118,35 @@ async def update_buttons(message: Message, key: str = None, edit_type: str = Non
             print(f"Erreur dans update_buttons: {e}")
 
 
+import re
+
+def parse_config_value(key: str, raw_value: str):
+    raw_value = raw_value.strip()
+    if key in ["ADMIN"]:
+        parts = re.split(r'[\s,]+', raw_value)
+        return [int(x) if x.lstrip('-').isdigit() else x for x in parts if x]
+    elif key in ["FORCE_SUB_CHANNELS"]:
+        parts = re.split(r'[\s,]+', raw_value)
+        return [x.strip() for x in parts if x.strip()]
+    elif key in ["WEBHOOK"]:
+        return raw_value.lower() in ("true", "1", "yes", "on")
+    elif key in ["API_ID", "LOG_CHANNEL", "CHANNEL_LOG", "DUMP_CHANNEL", "BACKUP_GROUP_ID", "DAILY_BACKUP_POINTS", "PORT"]:
+        if raw_value.lstrip('-').isdigit():
+            return int(raw_value)
+        return raw_value
+    return raw_value
+
+
 async def edit_variable(_, message: Message, omsg: Message, key: str):
     handler_dict[message.chat.id] = False
-    value = message.text.strip()
-    if value.lower() == 'true':
-        value = True
-    elif value.lower() == 'false':
-        value = False
-    elif key in ['LOG_CHANNEL', 'CHANNEL_LOG', 'DUMP_CHANNEL', 'BACKUP_GROUP_ID', 'DAILY_BACKUP_POINTS', 'API_ID'] and (value.isdigit() or value.startswith('-')):
-        try:
-            value = int(value)
-        except ValueError:
-            pass
+    raw_text = message.text.strip()
+    parsed_value = parse_config_value(key, raw_text)
 
-    config_dict[key] = value
-    await hyoshcoder.update_db_config({key: value})
+    config_dict[key] = parsed_value
+    await hyoshcoder.update_db_config({key: parsed_value})
 
-    # Mettre à jour l'attribut sur l'objet settings s'il existe
     if hasattr(settings, key):
-        setattr(settings, key, value)
+        setattr(settings, key, parsed_value)
 
     try:
         await message.delete()

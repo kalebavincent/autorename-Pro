@@ -54,6 +54,19 @@ class Bot(Client):
 
     async def start(self):
         await super().start()
+        # Charger les configurations de /bset sauvegardées dans MongoDB
+        try:
+            from config import config_dict
+            db_cfg = await hyoshcoder.load_db_config()
+            for k, v in db_cfg.items():
+                if k == "_id":
+                    continue
+                config_dict[k] = v
+                if hasattr(settings, k):
+                    setattr(settings, k, v)
+        except Exception as _cfg_err:
+            print(f"Error loading DB config at startup: {_cfg_err}")
+
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
