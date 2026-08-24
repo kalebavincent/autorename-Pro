@@ -499,5 +499,16 @@ class Database:
             logging.error(f"Error loading db config: {e}")
             return {}
 
+    async def migrate_video_cover_default(self):
+        """Définit video_cover=True pour tous les utilisateurs existants où la clé est absente."""
+        try:
+            res = await self.col.update_many(
+                {"video_cover": {"$exists": False}},
+                {"$set": {"video_cover": True}}
+            )
+            logging.info(f"Migrated video_cover for {res.modified_count} users.")
+        except Exception as e:
+            logging.error(f"Error migrating video_cover: {e}")
+
 
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)

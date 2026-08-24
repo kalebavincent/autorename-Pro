@@ -67,6 +67,12 @@ class Bot(Client):
         except Exception as _cfg_err:
             print(f"Error loading DB config at startup: {_cfg_err}")
 
+        # Migration : Définir video_cover=True pour tous les utilisateurs existants où il est absent
+        try:
+            await hyoshcoder.migrate_video_cover_default()
+        except Exception as _mig_err:
+            print(f"Error migrating video_cover: {_mig_err}")
+
         me = await self.get_me()
         self.mention = me.mention
         self.username = me.username
@@ -138,4 +144,5 @@ class Bot(Client):
             except Exception as e:
                 print(f"Failed to send message in chat {chat_id}: {e}")
 
-Bot().run()
+if __name__ == "__main__":
+    Bot().run()
