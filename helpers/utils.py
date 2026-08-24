@@ -118,58 +118,46 @@ async def extract_quality(filename: str) -> str:
     return "Convertie"
 
 
+_last_progress_update = {}
+
 async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
-    diff = now - start
-    if round(diff % 5.00) == 0 or current == total:        
+    msg_id = getattr(message, "id", id(message))
+    last_update = _last_progress_update.get(msg_id, 0)
+
+    if (now - last_update >= 4.0) or current == total:
+        _last_progress_update[msg_id] = now
+        diff = max(now - start, 0.001)
         percentage = current * 100 / total
         speed = current / diff
+
         elapsed_time = round(diff) * 1000
-        time_to_completion = round((total - current) / speed) * 1000
+        time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
         estimated_total_time = elapsed_time + time_to_completion
 
-        elapsed_time = TimeFormatter(milliseconds=elapsed_time)
-        estimated_total_time = TimeFormatter(milliseconds=estimated_total_time)
+        elapsed_str = TimeFormatter(milliseconds=elapsed_time)
+        estimated_str = TimeFormatter(milliseconds=estimated_total_time)
 
-        progress = "{0}{1}".format(
-            ''.join(["█" for i in range(math.floor(percentage / 5))]),
-            ''.join(["░" for i in range(20 - math.floor(percentage / 5))])
-        )            
-        tmp = progress + Txt.PROGRESS_BAR.format( 
+        completed = math.floor(percentage / 5)
+        progress = "█" * completed + "░" * (20 - completed)
+
+        tmp = progress + Txt.PROGRESS_BAR.format(
             round(percentage, 2),
             humanbytes(current),
             humanbytes(total),
-            humanbytes(speed),            
-            estimated_total_time if estimated_total_time != '' else "0 s"
+            humanbytes(speed),
+            estimated_str if estimated_str != "" else "0 s"
         )
 
         full_text = f"{ud_type}\n\n{tmp}"
 
-        if len(full_text) <= 4096:
-            try:
-                await message.edit(text=full_text)
-            except Exception as e:
-                print(f"Erreur lors de l'édition du message : {e}")
-                try:
-                    new_message = await message.reply(text=full_text)
-                    message = new_message
-                except Exception as e:
-                    print(f"Erreur lors de la création d'un nouveau message : {e}")
-        else:
-            chunks = [full_text[i:i + 4096] for i in range(0, len(full_text), 4096)]
-            try:
-                await message.edit(text=chunks[0])
-                for chunk in chunks[1:]:
-                    await message.reply(text=chunk)
-            except Exception as e:
-                print(f"Erreur lors de l'envoi du message : {e}")
-                try:
-                    new_message = await message.reply(text=chunks[0])
-                    message = new_message
-                    for chunk in chunks[1:]:
-                        await message.reply(text=chunk)
-                except Exception as e:
-                    print(f"Erreur lors de la création d'un nouveau message : {e}")
+        try:
+            await message.edit(text=full_text)
+        except Exception:
+            pass
+
+        if current == total:
+            _last_progress_update.pop(msg_id, None)
 
 def humanbytes(size):    
     if not size:
