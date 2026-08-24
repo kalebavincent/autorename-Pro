@@ -142,7 +142,8 @@ class Database:
     async def set_media_preference(self, id, media_type):
         try:
             await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"media_type": media_type}}
+                {"_id": int(id)}, {"$set": {"media_type": media_type, "media_preference": media_type}},
+                upsert=True
             )
         except Exception as e:
             logging.error(f"Error setting media preference for user {id}: {e}")
@@ -150,10 +151,10 @@ class Database:
     async def get_media_preference(self, id):
         try:
             user = await self.col.find_one({"_id": int(id)})
-            return user.get("media_type", None) if user else None
+            return (user or {}).get("media_type") or (user or {}).get("media_preference") or "document"
         except Exception as e:
             logging.error(f"Error getting media preference for user {id}: {e}")
-            return None
+            return "document"
 
     async def set_metadata(self, id, bool_meta):
         try:

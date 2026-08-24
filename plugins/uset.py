@@ -48,7 +48,7 @@ async def build_main_text_and_keyboard(user_id: int):
     metadata     = user_data.get("metadata", True)
     meta_code    = user_data.get("metadata_code", "@hyoshassistantbot")
     video_cover  = user_data.get("video_cover", False)
-    media_pref   = user_data.get("media_preference", "document") or "document"
+    media_pref   = (user_data.get("media_type") or user_data.get("media_preference") or "document").lower()
 
     font_preview    = f"{FONT_EMOJIS.get(font,'▪️')} {FONT_PREVIEWS.get(font, font)}" if font else "aucune"
     caption_preview = f"`{caption[:30]}...`" if caption and len(caption) > 30 else (f"`{caption}`" if caption else "aucune")
@@ -403,8 +403,7 @@ async def uset_callback(client: Client, query: CallbackQuery):
         await message.edit_text(txt, reply_markup=kb)
 
     elif action == "toggle_media":
-        curr_user = await hyoshcoder.read_user(owner_id) or {}
-        curr_pref = (curr_user.get("media_preference") or "document").lower()
+        curr_pref = (await hyoshcoder.get_media_preference(owner_id) or "document").lower()
         next_pref = "video" if curr_pref == "document" else ("audio" if curr_pref == "video" else "document")
         await hyoshcoder.set_media_preference(owner_id, next_pref)
         await query.answer(f"📂 Mode d'envoi réglé sur : {next_pref.upper()}")

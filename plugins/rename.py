@@ -101,7 +101,7 @@ async def auto_rename_files(client, message):
     total_points = user_points + backup_pts
 
     format_template  = user_data.get("format_template", "")
-    media_preference = (user_data.get("media_preference") or "").lower().strip()
+    media_preference = (user_data.get("media_type") or user_data.get("media_preference") or "").lower().strip()
     sequential_mode  = user_data.get("sequential_mode", False)
     src_info         = await hyoshcoder.get_src_info(user_id)
 
