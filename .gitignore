@@ -169,3 +169,16 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Auto-added by workspace sync
+node_modules/
+*.pyc
+.venv/
+# Exclude large media files (>3MB)
+
+*.mkv
+
+*.mp4
+
+output/
+
