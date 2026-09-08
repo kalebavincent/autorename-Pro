@@ -1,17 +1,27 @@
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime
+import pytz
 import math
+import os
 import random
 import re
+import string
 import time
 from typing import Optional, Tuple
 import math, time
+import uuid
 from shortzy import Shortzy
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from scripts import Txt
-
+import mimetypes
+import os
+from typing import Tuple
+mimetypes.init()
 import ffmpeg
-
 from config import settings
+from PIL import Image
+from hachoir.metadata import extractMetadata
+from hachoir.parser import createParser
 
 
 
@@ -26,12 +36,17 @@ SEASON_PATTERNS = [
 
 # Patterns for extracting episode numbers
 EPISODE_PATTERNS = [
-    re.compile(r'(?:E|Épisode)\s*-?\s*(\d+)', re.IGNORECASE),
-    re.compile(r'Saison\s*\d+\s*(?:Episode|Ep|E)\s*(\d+)', re.IGNORECASE),
-    re.compile(r'S\d+(?:E|EP)(\d+)', re.IGNORECASE),
-    re.compile(r'S\d+\s*-\s*E(\d+)', re.IGNORECASE),
-    re.compile(r'EP?(\d{2})\b', re.IGNORECASE),
+    re.compile(r'(?:E|Épisode|Ep|Ép)\s*-?\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Saison\s*\d+\s*(?:Episode|Ep|E|Épisode|Ép)\s*(\d+)', re.IGNORECASE),
+    re.compile(r'S\d+(?:E|EP|ÉP)(\d+)', re.IGNORECASE),
+    re.compile(r'S\d+\s*[-~]\s*E(\d+)', re.IGNORECASE),
+    re.compile(r'EP?(\d{2,4})\b', re.IGNORECASE),
+    re.compile(r'ÉP?(\d{2,4})\b', re.IGNORECASE),
     re.compile(r'\b(\d{1,4})\b(?!\s*[pP])', re.IGNORECASE),
+    re.compile(r'Episode\s*(\d+)', re.IGNORECASE),
+    re.compile(r'Épisode\s*(\d+)', re.IGNORECASE),
+    re.compile(r'EP\s*(\d+)', re.IGNORECASE),
+    re.compile(r'ÉP\s*(\d+)', re.IGNORECASE),
 ]
 
 # Patterns for extracting quality
@@ -45,9 +60,13 @@ QUALITY_PATTERNS = {
     re.compile(r'[([<{]?\s*UHD\s*[)\]>}]?', re.IGNORECASE): lambda _: "UHD",
     re.compile(r'[([<{]?\s*HD\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
     re.compile(r'[([<{]?\s*SD\s*[)\]>}]?', re.IGNORECASE): lambda _: "SD",
-    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
-    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "convertie",
+    re.compile(r'[([<{]?\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "Convertie",
+    re.compile(r'[([<{]?\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "Convertie",
+    re.compile(r'[([<{]?\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "Convertie",
+    re.compile(r'[([<{]?\s*non\s*convertie\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*converti\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*non\s*convertis\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
+    re.compile(r'[([<{]?\s*NON\s*COVERTI[EéS]\s*[)\]>}]?', re.IGNORECASE): lambda _: "HD",
 }
 
 async def extract_season(filename: str) -> Optional[str]:
@@ -90,67 +109,57 @@ async def extract_season_episode(filename: str) -> Optional[Tuple[str, str]]:
 async def extract_quality(filename: str) -> str:
     """
     Extrait la qualité de la vidéo.
-    Retourne "Unknown" si aucune qualité n'est trouvée.
+    Retourne "Convertie" si aucune qualité n'est trouvée.
     """
     for pattern, extractor in QUALITY_PATTERNS.items():
         match = pattern.search(filename)
         if match:
             return extractor(match)
-    return "Unknown"
+    return "Convertie"
 
+
+_progress_last_edit = {}
 
 async def progress_for_pyrogram(current, total, ud_type, message, start):
     now = time.time()
-    diff = now - start
-    if round(diff % 5.00) == 0 or current == total:        
-        percentage = current * 100 / total
-        speed = current / diff
-        elapsed_time = round(diff) * 1000
-        time_to_completion = round((total - current) / speed) * 1000
-        estimated_total_time = elapsed_time + time_to_completion
+    msg_id = getattr(message, "id", None) or id(message)
+    last_edit = _progress_last_edit.get(msg_id, 0)
 
-        elapsed_time = TimeFormatter(milliseconds=elapsed_time)
-        estimated_total_time = TimeFormatter(milliseconds=estimated_total_time)
+    # Throttling strict (3.5s) : Évite de bloquer les threads MTProto Telegram avec des requêtes edit_text trop fréquentes
+    if (now - last_edit < 3.5) and current != total:
+        return
 
-        progress = "{0}{1}".format(
-            ''.join(["█" for i in range(math.floor(percentage / 5))]),
-            ''.join(["░" for i in range(20 - math.floor(percentage / 5))])
-        )            
-        tmp = progress + Txt.PROGRESS_BAR.format( 
-            round(percentage, 2),
-            humanbytes(current),
-            humanbytes(total),
-            humanbytes(speed),            
-            estimated_total_time if estimated_total_time != '' else "0 s"
-        )
+    _progress_last_edit[msg_id] = now
+    diff = max(now - start, 0.001)
 
-        full_text = f"{ud_type}\n\n{tmp}"
+    percentage = current * 100 / total
+    speed = current / diff
+    remaining_bytes = max(total - current, 0)
+    time_to_completion = round(remaining_bytes / max(speed, 1)) * 1000
 
-        if len(full_text) <= 4096:
-            try:
-                await message.edit(text=full_text)
-            except Exception as e:
-                print(f"Erreur lors de l'édition du message : {e}")
-                try:
-                    new_message = await message.reply(text=full_text)
-                    message = new_message
-                except Exception as e:
-                    print(f"Erreur lors de la création d'un nouveau message : {e}")
-        else:
-            chunks = [full_text[i:i + 4096] for i in range(0, len(full_text), 4096)]
-            try:
-                await message.edit(text=chunks[0])
-                for chunk in chunks[1:]:
-                    await message.reply(text=chunk)
-            except Exception as e:
-                print(f"Erreur lors de l'envoi du message : {e}")
-                try:
-                    new_message = await message.reply(text=chunks[0])
-                    message = new_message
-                    for chunk in chunks[1:]:
-                        await message.reply(text=chunk)
-                except Exception as e:
-                    print(f"Erreur lors de la création d'un nouveau message : {e}")
+    estimated_total_time = TimeFormatter(milliseconds=time_to_completion)
+
+    filled = math.floor(percentage / 5)
+    progress = "█" * filled + "░" * (20 - filled)
+
+    tmp = progress + Txt.PROGRESS_BAR.format(
+        round(percentage, 2),
+        humanbytes(current),
+        humanbytes(total),
+        humanbytes(speed),
+        estimated_total_time if estimated_total_time != '' else "0 s"
+    )
+
+    full_text = f"{ud_type}\n\n{tmp}"
+
+    try:
+        await message.edit_text(full_text)
+    except Exception as e:
+        if "MESSAGE_NOT_MODIFIED" not in str(e) and "FLOOD_WAIT" not in str(e):
+            pass
+
+    if current == total:
+        _progress_last_edit.pop(msg_id, None)
 
 def humanbytes(size):    
     if not size:
@@ -184,41 +193,84 @@ def convert(seconds):
     seconds %= 60      
     return "%d:%02d:%02d" % (hour, minutes, seconds)
 
-def get_media_duration(file_path: str) -> float:
-    """
-    Récupère la durée d'un fichier vidéo ou audio en secondes avec ffmpeg.
-    """
+import json
+
+async def get_video_info(file_path: str) -> dict:
+    """Récupère largeur, hauteur et durée d'une vidéo via ffprobe (comme v-compress)."""
     try:
-        probe = ffmpeg.probe(file_path)
-        
-        if 'format' in probe and 'duration' in probe['format']:
-            duration = probe['format']['duration']
-            if isinstance(duration, (int, float)):
-                return float(duration)
-            elif isinstance(duration, str):
-                return float(duration)
-            else:
-                print(f"Format de durée non pris en charge dans 'format' : {type(duration)}")
-        
-        for stream in probe.get('streams', []):
-            if stream.get('codec_type') in ['video', 'audio'] and 'duration' in stream:
-                duration = stream['duration']
-                if isinstance(duration, (int, float)):
-                    return float(duration)
-                elif isinstance(duration, str):
-                    return float(duration)
-                else:
-                    print(f"Format de durée non pris en charge dans 'streams' : {type(duration)}")
-        
-        print("Aucune durée trouvée dans les métadonnées.")
-        return 0
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "stream=width,height,duration,codec_type:format=duration",
+            "-of", "json",
+            file_path,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        data = json.loads(stdout.decode())
+
+        duration = 0.0
+        if "format" in data:
+            duration = float(data["format"].get("duration", 0))
+
+        width, height = 0, 0
+        if "streams" in data:
+            for s in data["streams"]:
+                if s.get("codec_type") == "video":
+                    width = int(s.get("width", 0))
+                    height = int(s.get("height", 0))
+                    stream_dur = float(s.get("duration", 0))
+                    if stream_dur > 0:
+                        duration = stream_dur
+                    break
+
+        return {
+            "width": width,
+            "height": height,
+            "duration": int(duration),
+        }
     except Exception as e:
-        print(f"Erreur lors de la récupération de la durée : {e}")
-        return 0
+        print(f"Failed to get video info for {file_path}: {e}")
+    return {"width": 0, "height": 0, "duration": 0}
+
+
+async def get_video_thumbnail(file_path: str, output_thumb: str, timestamp: int = 5, resize: bool = True) -> bool:
+    """Génère une miniature à partir d'une vidéo à un instant T (comme v-compress)."""
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss", str(timestamp),
+            "-i", file_path,
+            "-vframes", "1",
+            "-q:v", "2",
+            output_thumb,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+        )
+        await asyncio.wait_for(proc.wait(), timeout=15)
+        
+        if resize and os.path.exists(output_thumb) and os.path.getsize(output_thumb) > 0:
+            try:
+                with Image.open(output_thumb) as img:
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    img.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                    img.save(output_thumb, "JPEG", quality=95)
+            except Exception as pil_err:
+                print(f"PIL thumbnail optimization failed: {pil_err}")
+                
+        return os.path.exists(output_thumb)
+    except Exception as e:
+        print(f"Failed to generate thumbnail for {file_path}: {e}")
+        return False
 
 async def send_log(b, u):
     if settings.LOG_CHANNEL is not None:
-        curr = datetime.now(timezone("Africa/Lubumbashi"))
+        curr = datetime.now(pytz.timezone("Africa/Lubumbashi"))
         date = curr.strftime('%d %B, %Y')
         time = curr.strftime('%I:%M:%S %p')
         await b.send_message(
@@ -345,6 +397,154 @@ async def check_anti_nsfw(new_name: str, message) -> bool:
     except Exception as e:
         print(f"Error in check_anti_nsfw: {e}")
         return False  
+    
+
+MIME_EXTENSIONS = {
+    # Vidéo
+    "video/mp4": ".mp4",
+    "video/x-matroska": ".mkv",
+    "video/quicktime": ".mov",
+    "video/x-msvideo": ".avi",
+    "video/x-flv": ".flv",
+    "video/webm": ".webm",
+    "video/3gpp": ".3gp",
+    "video/mpeg": ".mpeg",
+    
+    # Audio
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/x-wav": ".wav",
+    "audio/flac": ".flac",
+    "audio/x-aiff": ".aiff",
+    "audio/x-m4a": ".m4a",
+    "audio/x-ms-wma": ".wma",
+    "audio/aac": ".aac",
+    
+    # Sous-titres
+    "application/x-subrip": ".srt",
+    "text/vtt": ".vtt",
+    "application/ttml+xml": ".ttml",
+    
+    # Images
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+    "image/tiff": ".tiff",
+    "image/bmp": ".bmp",
+    
+    # Documents
+    "text/plain": ".txt",
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/rtf": ".rtf",
+    "application/epub+zip": ".epub",
+    
+    # Archives
+    "application/zip": ".zip",
+    "application/x-rar-compressed": ".rar",
+    "application/x-tar": ".tar",
+    "application/x-7z-compressed": ".7z",
+    "application/gzip": ".gz",
+    
+    # Code
+    "text/html": ".html",
+    "text/css": ".css",
+    "application/javascript": ".js",
+    "application/json": ".json",
+    "application/x-python-code": ".py",
+    "text/x-java-source": ".java",
+    "text/x-php": ".php",
+    "text/x-c": ".c",
+    "text/x-c++": ".cpp",
+    
+    # Divers
+    "application/x-bittorrent": ".torrent",
+    "application/x-shockwave-flash": ".swf",
+    "application/octet-stream": ".bin"
+}
+
+def determine_file_extension(mime_type: Optional[str], original_name: Optional[str] = None) -> str:
+    """Version robuste avec gestion des None"""
+    mime_type = mime_type or ""
+    original_name = original_name or ""
+    
+    extension = MIME_EXTENSIONS.get(mime_type.lower(), "")
+    
+    if not extension:
+        extension = mimetypes.guess_extension(mime_type) or ""
+    
+    if not extension and original_name:
+        _, extension = os.path.splitext(original_name)
+    
+    return extension.lower() if extension else ".mp4"
+
+def verify_actual_file_type(file_path: str) -> Tuple[str, str]:
+    """
+    Vérifie le type réel du fichier en analysant son contenu.
+    
+    Args:
+        file_path: Chemin vers le fichier
+    
+    Returns:
+        Tuple: (MIME Type réel, extension appropriée)
+    """
+    try:
+        import filetype
+        kind = filetype.guess(file_path)
+        if kind:
+            return kind.mime, determine_file_extension(kind.mime)
+    except ImportError:
+        pass  
+    
+    mime_type, _ = mimetypes.guess_type(file_path)
+    return mime_type, determine_file_extension(mime_type)
+
+def get_filename(extension: str = "", prefix: str = "", suffix: str = "", use_timestamp: bool = True) -> str:
+    """
+    Génère un nom de fichier unique et aléatoire.
+    
+    Args:
+        extension (str): Extension du fichier (ex: ".mp4")
+        prefix (str): Préfixe à ajouter devant le nom
+        suffix (str): Suffixe à ajouter après le nom
+        use_timestamp (bool): Si True, ajoute un timestamp pour plus d'unicité
+    
+    Returns:
+        str: Nom de fichier généré
+    """
+    random_part = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    
+    unique_part = str(uuid.uuid4())[:8]
+    
+    filename_parts = []
+    if prefix:
+        filename_parts.append(prefix)
+    
+    filename_parts.append(random_part)
+    filename_parts.append(unique_part)
+    
+    if use_timestamp:
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename_parts.append(timestamp)
+    
+    if suffix:
+        filename_parts.append(suffix)
+    
+    filename = "_".join(filename_parts)
+    
+    if extension:
+        if not extension.startswith("."):
+            extension = f".{extension}"
+        filename += extension
+    
+    return filename
 
 # # Example usage
 # import asyncio
@@ -361,3 +561,76 @@ async def check_anti_nsfw(new_name: str, message) -> bool:
 
 # # Run the async main function
 # asyncio.run(main())
+
+
+
+async def fix_thumb(thumb_path: str) -> tuple[int, int, Optional[str]]:
+    """Version robuste de la fonction de redimensionnement"""
+    try:
+        from PIL import Image 
+        import os
+
+        if not thumb_path or not os.path.exists(thumb_path):
+            return 0, 0, None
+
+        with Image.open(thumb_path) as img:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            width, height = img.size
+            new_height = 320
+            new_width = int((new_height / height) * width)
+            
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            output_path = f"{thumb_path}_fixed.jpg"
+            img.save(output_path, "JPEG", quality=90, optimize=True)
+            
+            if output_path != thumb_path:
+                os.remove(thumb_path)
+                
+            return width, height, output_path
+
+    except Exception as e:
+        print(f"Erreur fix_thumb: {str(e)}")
+        if 'thumb_path' in locals() and os.path.exists(thumb_path):
+            try:
+                os.remove(thumb_path)
+            except:
+                pass
+        return 0, 0, None
+
+async def take_screen_shot(video_file, output_directory, ttl):
+    if not video_file or not os.path.exists(video_file):
+        print("Fichier vidéo invalide ou introuvable")
+        return None
+
+    os.makedirs(output_directory, exist_ok=True)
+    out_put_file_name = f"{output_directory}/{time.time()}.jpg"
+    
+    try:
+        file_genertor_command = [
+            "ffmpeg",
+            "-ss",
+            str(ttl),
+            "-i",
+            video_file,
+            "-vframes",
+            "1",
+            out_put_file_name
+        ]
+        
+        process = await asyncio.create_subprocess_exec(
+            *file_genertor_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        if os.path.lexists(out_put_file_name) and os.path.getsize(out_put_file_name) > 0:
+            return out_put_file_name
+        else:
+            print(f"Erreur ffmpeg: {stderr.decode().strip()}")
+            return None
+    except Exception as e:
+        print(f"Erreur lors de la capture d'écran de la vidéo: {e}")
+        return None

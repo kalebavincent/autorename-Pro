@@ -10,7 +10,7 @@ from scripts import Txt
 from database.data import hyoshcoder
 from config import settings
 
-@Client.on_callback_query()
+@Client.on_callback_query(filters.regex(r"^(home|caption|help|meta|donate|file_names|thumbnail|metadatax|source|premiumx|plans|about|showThumb|custom_metadata|metadata_|free_points|setmedia_|secanciel|toogle_src|close)$"))
 async def cb_handler(client, query: CallbackQuery):
     data = query.data
     user_id = query.from_user.id

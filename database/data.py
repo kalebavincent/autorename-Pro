@@ -15,6 +15,8 @@ class Database:
             raise e  
         self.hyoshcoder = self._client[database_name]
         self.col = self.hyoshcoder.user
+        self.channel_col = self.hyoshcoder.channel_templates
+        self.config_col = self.hyoshcoder.config
 
     def new_user(self, id):
         return dict(
@@ -37,7 +39,13 @@ class Database:
             referrer_id=None,
             sequential_mode=False,
             user_channel=None,
-            src_info="file_name"
+            src_info="file_name",
+            # --- Points de secours (backup) ---
+            backup_points=0,           # Démarre à 0. L'utilisateur doit taper /ilove_thebot dans le groupe pour avoir 50 pts/jour
+            backup_date=None,          # Date UTC ISO de la dernière régénération
+            # --- Police (font) ---
+            font=None,                 # Style de police pour les captions
+            video_cover=True,          # Envoi de la miniature comme photo HD avant la vidéo (True par défaut)
         )
 
     async def add_user(self, b, m):
@@ -135,7 +143,8 @@ class Database:
     async def set_media_preference(self, id, media_type):
         try:
             await self.col.update_one(
-                {"_id": int(id)}, {"$set": {"media_type": media_type}}
+                {"_id": int(id)}, {"$set": {"media_type": media_type, "media_preference": media_type}},
+                upsert=True
             )
         except Exception as e:
             logging.error(f"Error setting media preference for user {id}: {e}")
@@ -143,10 +152,10 @@ class Database:
     async def get_media_preference(self, id):
         try:
             user = await self.col.find_one({"_id": int(id)})
-            return user.get("media_type", None) if user else None
+            return (user or {}).get("media_type") or (user or {}).get("media_preference") or "document"
         except Exception as e:
             logging.error(f"Error getting media preference for user {id}: {e}")
-            return None
+            return "document"
 
     async def set_metadata(self, id, bool_meta):
         try:
@@ -284,15 +293,37 @@ class Database:
                 await self.col.insert_one({"_id": int(id), "sequential_mode": True})
         except Exception as e:
             logging.error(f"Error toggling sequential mode for user {id}: {e}")
-    
+
     async def get_sequential_mode(self, id):
         try:
             user = await self.col.find_one({"_id": int(id)})
             return user.get("sequential_mode", False)
         except Exception as e:
             logging.error(f"Error getting sequential mode for user {id}: {e}")
-            return False
-    
+
+    async def toggle_video_cover(self, id):
+        """Active/désactive l'envoi de la miniature comme photo HD avant la vidéo."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            if user:
+                new_val = not user.get("video_cover", True)
+                await self.col.update_one({"_id": int(id)}, {"$set": {"video_cover": new_val}})
+                return new_val
+            else:
+                await self.col.insert_one({"_id": int(id), "video_cover": True})
+                return True
+        except Exception as e:
+            logging.error(f"Error toggling video_cover for user {id}: {e}")
+            return True
+
+    async def get_video_cover(self, id):
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return (user or {}).get("video_cover", True)
+        except Exception as e:
+            logging.error(f"Error getting video_cover for user {id}: {e}")
+            return True
+
     async def set_user_channel(self, id, channel_id):
         try:
             user = await self.col.find_one({"_id": int(id)})
@@ -350,6 +381,134 @@ class Database:
         except Exception as e:
             logging.error(f"Error getting reffer for user {id}: {e}")
             return None
+
+    # ── Points de Secours (Backup Points) ─────────────────────────────────────
+
+    async def get_backup_info(self, id):
+        """Retourne (backup_points, backup_date) pour l'utilisateur."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            if not user:
+                return 50, None
+            bp = user.get("backup_points", 50)
+            bd = user.get("backup_date", None)
+            return bp, bd
+        except Exception as e:
+            logging.error(f"Error getting backup info for user {id}: {e}")
+            return 50, None
+
+    async def reset_backup_points(self, id):
+        """Remet les backup_points à 50 et enregistre la date UTC du jour."""
+        today_utc = datetime.date.today().isoformat()
+        try:
+            await self.col.update_one(
+                {"_id": int(id)},
+                {"$set": {"backup_points": 50, "backup_date": today_utc}},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error resetting backup points for user {id}: {e}")
+
+    async def consume_backup_point(self, id):
+        """Décrémente les backup_points de 1 (min 0)."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            if user:
+                current = user.get("backup_points", 0)
+                new_val = max(0, current - 1)
+                await self.col.update_one(
+                    {"_id": int(id)},
+                    {"$set": {"backup_points": new_val}}
+                )
+        except Exception as e:
+            logging.error(f"Error consuming backup point for user {id}: {e}")
+
+    # ── Police (Font) ──────────────────────────────────────────────────────────
+
+    async def set_font(self, id, font):
+        """Enregistre la police choisie par l'utilisateur."""
+        try:
+            await self.col.update_one(
+                {"_id": int(id)},
+                {"$set": {"font": font}},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error setting font for user {id}: {e}")
+
+    async def get_font(self, id):
+        """Retourne la police de l'utilisateur (ou None)."""
+        try:
+            user = await self.col.find_one({"_id": int(id)})
+            return user.get("font", None) if user else None
+        except Exception as e:
+            logging.error(f"Error getting font for user {id}: {e}")
+            return None
+
+    async def del_font(self, id):
+        """Supprime la police de l'utilisateur."""
+        try:
+            await self.col.update_one(
+                {"_id": int(id)},
+                {"$unset": {"font": ""}}
+            )
+        except Exception as e:
+            logging.error(f"Error deleting font for user {id}: {e}")
+
+    # ── Modèles de Caption par Canal / Groupe ──────────────────────────────────
+
+    async def set_channel_template(self, chat_id: int, template: str):
+        """Sauvegarde le modèle de caption généré pour un canal / groupe."""
+        try:
+            await self.channel_col.update_one(
+                {"_id": int(chat_id)},
+                {"$set": {"template": template}},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error setting channel template for {chat_id}: {e}")
+
+    async def get_channel_template(self, chat_id: int) -> str:
+        """Récupère le modèle de caption du canal / groupe."""
+        try:
+            res = await self.channel_col.find_one({"_id": int(chat_id)})
+            return res.get("template") if res else None
+        except Exception as e:
+            logging.error(f"Error getting channel template for {chat_id}: {e}")
+            return None
+
+    # ── Configurations Bot Globales (/bset) ───────────────────────────────────
+
+    async def update_db_config(self, config_data: dict):
+        """Sauvegarde les variables de configuration modifiées dans MongoDB."""
+        try:
+            await self.config_col.update_one(
+                {"_id": "bot_config"},
+                {"$set": config_data},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error updating db config: {e}")
+
+    async def load_db_config(self) -> dict:
+        """Charge la configuration globale sauvegardée dans MongoDB."""
+        try:
+            res = await self.config_col.find_one({"_id": "bot_config"})
+            return res if res else {}
+        except Exception as e:
+            logging.error(f"Error loading db config: {e}")
+            return {}
+
+    async def migrate_video_cover_default(self):
+        """Définit video_cover=True pour tous les utilisateurs existants où la clé est absente."""
+        try:
+            res = await self.col.update_many(
+                {"video_cover": {"$exists": False}},
+                {"$set": {"video_cover": True}}
+            )
+            logging.info(f"Migrated video_cover for {res.modified_count} users.")
+        except Exception as e:
+            logging.error(f"Error migrating video_cover: {e}")
 
 
 hyoshcoder = Database(Config.DATA_URI, Config.DATA_NAME)

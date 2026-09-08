@@ -1,0 +1,11 @@
+services:
+  autorename-pro:
+    build: .
+    container_name: autorename-pro
+    restart: always
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
